@@ -4,10 +4,14 @@ from tkinter import messagebox
 import tkinter.font as tkFont
 from pynput import mouse
 from pynput.mouse import Button
-
+import os
+import cv2
+from bot_script import screenshot_high_res, get_map
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+RESOURCE_PATH = os.path.join(BASE_DIR, "resources", "resources.db")
 
 def init_db():
-    conn = sqlite3.connect("resources.db")
+    conn = sqlite3.connect(RESOURCE_PATH)
     c = conn.cursor()
     c.execute("""
             CREATE TABLE IF NOT EXISTS resources (
@@ -23,7 +27,7 @@ def init_db():
     conn.close()
 
 def save_resources(map_pos, resources, zone="Douze", overwrite=False):
-    conn = sqlite3.connect("resources.db")
+    conn = sqlite3.connect(os.path.join(BASE_DIR, "resources", "resources.db"))
     c = conn.cursor()
     c.execute("SELECT DISTINCT type FROM resources WHERE map_x = ? AND map_y = ? AND zone = ?", (map_pos[0], map_pos[1], zone))
     # On identifie les types de ressources déjà enregistrés pour la map
@@ -48,12 +52,11 @@ def save_resources(map_pos, resources, zone="Douze", overwrite=False):
     conn.close()
     return None
 
-
-class ResourceMapper(tk.Toplevel):
-    def __init__(self, master=None):
-        super().__init__(master)
+class ResourceMapper(tk.Tk):
+    def __init__(self):
+        super().__init__()
         self.attributes("-topmost", True)
-
+        self.title("Resourde Mapper")
         # état
         self.active_resource = None
         self.resources = {}
@@ -61,20 +64,31 @@ class ResourceMapper(tk.Toplevel):
         self.resource_labels = {}
         self.clear_buttons = {}
         self.delete_buttons = {}
+        self.selected_mode = tk.StringVar(value="automatique")
+        self.window_focused = tk.IntVar(value=1)
+
+        self.options = ["automatique", "manuel"]
 
         # === FRAME 1 : coordonnées ===
         self.top_frame = tk.Frame(self)
         self.top_frame.pack(side="top", fill="x", pady=5)
 
         tk.Label(self.top_frame, text="Coordonnées:").grid(row=0, column=0, sticky="w")
-        tk.Label(self.top_frame, text="X:").grid(row=0, column=1, sticky="w")
+        count = 1
+        for opt in self.options:
+            rb = tk.Radiobutton(self.top_frame, text=opt, variable=self.selected_mode, value=opt)
+            rb.grid(row=0, column=count, sticky="w")
+            count += 1
+
+        tk.Label(self.top_frame, text="X:").grid(row=0, column=3, sticky="w")
         self.x_spin = tk.Spinbox(self.top_frame, from_=-100, to=100, width=5)
-        self.x_spin.grid(row=0, column=2, sticky="w")
+        self.x_spin.grid(row=0, column=4, sticky="w")
         self.x_spin.delete(0, "end")
         self.x_spin.insert(0, "0")
-        tk.Label(self.top_frame, text="Y:").grid(row=0, column=3, sticky="w")
+
+        tk.Label(self.top_frame, text="Y:").grid(row=0, column=5, sticky="w")
         self.y_spin = tk.Spinbox(self.top_frame, from_=-100, to=100, width=5)
-        self.y_spin.grid(row=0, column=4, sticky="w")
+        self.y_spin.grid(row=0, column=6, sticky="w")
         self.y_spin.delete(0, "end")
         self.y_spin.insert(0, "0")
 
@@ -99,9 +113,23 @@ class ResourceMapper(tk.Toplevel):
         self.listener = mouse.Listener(on_click=self.on_click)
         self.listener.start()
 
+        def clear_focus(event):
+            if event.widget != self.zone_entry:
+                self.focus_set()
+
+        def get_focus(event):
+            return
+        def lose_focus(event):
+            self.window_focused = 1
+
+        self.bind("<Button-1>", clear_focus)
+
+        self.bind("<FocusIn>", get_focus)
+        self.bind("<FocusOut>", lose_focus)
+
     def open_add_resource_popup(self):
         # création du pop-up
-        popup = tk.Toplevel(self.root)
+        popup = tk.Toplevel(self)
         popup.title("Ajouter un type de ressource")
         popup.attributes("-topmost", True)
 
@@ -187,27 +215,42 @@ class ResourceMapper(tk.Toplevel):
 
     def on_click(self, x, y, button, pressed):
         if pressed and button == Button.left and self.active_resource:
-            win_x = self.root.winfo_rootx()
-            win_y = self.root.winfo_rooty()
-            win_w = self.root.winfo_width()
-            win_h = self.root.winfo_height()
+            win_x = self.winfo_x()
+            win_y = self.winfo_y()
+            win_w = self.winfo_width()
+            win_h = self.winfo_height()
 
             TITLEBAR_HEIGHT = 25
             # les clicks dans la fenêtre sont ignorés
-            if win_x <= x <= win_x + win_w and win_y - TITLEBAR_HEIGHT<= y <= win_y + win_h:
+            if win_x <= x <= win_x + win_w + 1 and win_y - TITLEBAR_HEIGHT<= y <= win_y + win_h + TITLEBAR_HEIGHT + 1:
                 return
-            # On ajoute la ressource
-            self.resources[self.active_resource].append((int(x), int(y)))
-            # On recalcule le label
-            resource_label = " ".join(f"({rx},{ry})" for rx, ry in self.resources[self.active_resource])
-            self.resource_labels[self.active_resource].config(text=resource_label)
+            if self.window_focused < 1:
+                # On ajoute la ressource
+                self.resources[self.active_resource].append((int(x), int(y)))
+                # On recalcule le label
+                resource_label = " ".join(f"({rx},{ry})" for rx, ry in self.resources[self.active_resource])
+                self.resource_labels[self.active_resource].config(text=resource_label)
+            else:
+                self.window_focused -= 1
 
     def save_map(self):
         if self.active_resource:
             self.resource_buttons[self.active_resource].config(text=self.active_resource+" (OFF)")
             self.active_resource = None
-        map_x = int(self.x_spin.get().strip())
-        map_y = int(self.y_spin.get().strip())
+        mode = self.selected_mode.get()
+        if mode == "manuel":
+            map_x = int(self.x_spin.get().strip())
+            map_y = int(self.y_spin.get().strip())
+        else:
+            try:
+                map_x, map_y = get_map()
+                self.x_spin.delete(0, "end")
+                self.x_spin.insert(0, str(map_x))
+                self.y_spin.delete(0, "end")
+                self.y_spin.insert(0, str(map_y))
+            except ValueError:
+                print("Impossible de récupérer la position de la map")
+        
         zone = self.zone_entry.get()
         if not zone:
             zone = "Douze"
@@ -218,7 +261,7 @@ class ResourceMapper(tk.Toplevel):
         conflicting_resources = save_resources(map_pos, self.resources, zone)
         if conflicting_resources:
             # création du pop-up
-            popup = tk.Toplevel(self.root)
+            popup = tk.Toplevel(self)
             popup.title("Ressources déjà enregistrées")
             popup.attributes("-topmost", True)
 

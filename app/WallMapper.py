@@ -1,10 +1,12 @@
 import tkinter as tk
 from tkinter import font, messagebox, filedialog
 import math
+import os
 
 GRID_SIZE = 200
 HALF = GRID_SIZE // 2
-OUTPUT_FILE = "walls.txt"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+WALLS_FOLDER = os.path.join(BASE_DIR, "resources", "walls")
 
 class WallMapper(tk.Toplevel):
     def __init__(self, master=None):
@@ -14,7 +16,7 @@ class WallMapper(tk.Toplevel):
         # Top bar
         top = tk.Frame(self)
         top.pack(side="top", fill="x")
-        self.save_btn = tk.Button(top, text="Enregistrer", command=self.save_walls)
+        self.save_btn = tk.Button(top, text="Enregistrer", command=self.open_save_window)
         self.save_btn.pack(side="right", padx=6, pady=6)
 
         self.load_btn = tk.Button(top, text="Charger", command=self.load_walls)
@@ -30,13 +32,14 @@ class WallMapper(tk.Toplevel):
         self.canvas.pack(fill="both", expand=True)
 
         # State
-        self.cell_size = 40
+        self.cell_size = 80
         self.offset_x = 0
         self.offset_y = 0
         self.walls = set()
         self.edge_items = {}
+        self.file_name = ""
 
-        self.font_small = font.Font(size=8)
+        self.font_small = font.Font(size=12)
 
         # Mouse state
         self._pan_start = None
@@ -204,7 +207,36 @@ class WallMapper(tk.Toplevel):
     # ---------------------------
     # save / load
     # ---------------------------
-    def save_walls(self):
+
+    def open_save_window(self):
+        popup = tk.Toplevel(self)
+        popup.title("Entrez le nom de la zone concernée")
+        popup.attributes("-topmost", True)
+        tk.Label(popup, text="Nom de la zone concernée:").pack(padx=10, pady=5)
+        entry = tk.Entry(popup)
+        entry.pack(padx=10, pady=5)
+        entry.focus_set()
+
+        def validate():
+            name = entry.get().strip()
+            if not name:
+                messagebox.showerror("Erreur", "Entrez un nom pour la zone concernée")
+                return
+            # To do: Verifier si le fichier existe deja, s'il existe deja demander confirmation a l'utilisateur pour l'ecrasement des donnees
+            self.try_save_walls(name)
+            popup.destroy()
+
+        entry.bind("<Return>", lambda e: validate())
+
+        tk.Button(popup, text="Valider", command=validate).pack(pady=5)
+
+    def try_save_walls(self, name):
+        def save_walls(filepath):
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(";".join(parts))
+            messagebox.showinfo(
+                "Enregistrer", f"{len(self.walls)} arêtes sauvegardées dans pour la zone {name}"
+            )
         if not self.walls:
             messagebox.showinfo("Enregistrer", "Aucun mur à enregistrer.")
             return
@@ -212,11 +244,16 @@ class WallMapper(tk.Toplevel):
             f"(({a[0]},{a[1]}),({b[0]},{b[1]}));(({b[0]},{b[1]}),({a[0]},{a[1]}))"
             for a, b in sorted(self.walls)
         ]
-        with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
-            f.write(";".join(parts))
-        messagebox.showinfo(
-            "Enregistrer", f"{len(self.walls)} arêtes sauvegardées dans {OUTPUT_FILE}"
-        )
+        filepath = os.path.join(WALLS_FOLDER, name + ".txt")
+        if os.path.exists(filepath):
+            confirm = tk.Toplevel(self)
+            confirm.title("Zone déjà enregistrée")
+            confirm.attributes("-topmost", True)
+            tk.Label(confirm, text="Une zone est déjà enregistrée sous ce nom. Voulez-vous écraser les données ?").pack()
+            tk.Button(confirm, text="Oui", command=lambda: (save_walls(filepath), confirm.destroy())).pack(pady=5)
+            tk.Button(confirm, text="Non", command=confirm.destroy).pack(pady=5)
+        else:
+            save_walls(filepath)
 
     def load_walls(self):
         file_path = filedialog.askopenfilename(
