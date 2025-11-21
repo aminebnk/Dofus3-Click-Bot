@@ -25,7 +25,7 @@ class RouteMaker(tk.Toplevel):
 
         tk.Label(
             top,
-            text="Clic gauche = ajouter une case | Glisser gauche = déplacer la vue | Retour arrière = supprimer dernier point"
+            text="Clic gauche = ajouter une case | Retour arrière = supprimer la dernière case"
         ).pack(side="left", padx=6)
 
         # Canvas
@@ -33,33 +33,34 @@ class RouteMaker(tk.Toplevel):
         self.canvas.pack(fill="both", expand=True)
 
         # State
-        self.cell_size = 40
+        self.cell_size = 80
         self.offset_x = 0
         self.offset_y = 0
-        self.route = []  # chemin = liste de cases (x,y)
+        self.route = []  # route = list of tiles (x,y)
 
         self.font_small = font.Font(size=8)
 
         # Mouse state
-        self._pan_start = None
-        self._pan_offset_start = None
-        self._click_pos = None
-        self._dragged = False
+        self.pan_start = None
+        self.pan_offset_start = None
+        self.click_pos = None
+        self.dragged = False
 
         # Bind events
-        self.canvas.bind("<Configure>", self._on_configure)
-        self.canvas.bind("<ButtonPress-1>", self._on_left_press)
-        self.canvas.bind("<B1-Motion>", self._on_left_drag)
-        self.canvas.bind("<ButtonRelease-1>", self._on_left_release)
+        self.canvas.bind("<Configure>", self.on_configure)
+        self.canvas.bind("<ButtonPress-1>", self.on_left_press)
+        self.canvas.bind("<B1-Motion>", self.on_left_drag)
+        self.canvas.bind("<ButtonRelease-1>", self.on_left_release)
 
         # Bind Backspace
-        self.bind("<BackSpace>", self._on_backspace)
+        self.bind("<BackSpace>", self.on_backspace)
 
         self.redraw()
 
-    # ---------------------------
-    # coordinate transforms
-    # ---------------------------
+    # # # # # # # # # # # # #
+    # coordinate transforms #
+    # # # # # # # # # # # # #
+
     def world_to_screen(self, wx, wy):
         cx = self.canvas.winfo_width() // 2
         cy = self.canvas.winfo_height() // 2
@@ -74,16 +75,17 @@ class RouteMaker(tk.Toplevel):
         wy = (sy - cy - self.offset_y) / self.cell_size
         return wx, wy
 
-    # ---------------------------
-    # drawing
-    # ---------------------------
+    # # # # # #
+    # drawing #
+    # # # # # #
+
     def redraw(self):
         self.canvas.delete("all")
-        self._draw_grid()
-        self._draw_labels()
-        self._draw_route()
+        self.draw_grid()
+        self.draw_labels()
+        self.draw_route()
 
-    def _draw_grid(self):
+    def draw_grid(self):
         w = self.canvas.winfo_width()
         h = self.canvas.winfo_height()
         left_wx, top_wy = self.screen_to_world_float(0, 0)
@@ -104,7 +106,7 @@ class RouteMaker(tk.Toplevel):
             sx2, sy2 = self.world_to_screen(max_x, gy + 0.5)
             self.canvas.create_line(sx1, sy1, sx2, sy2, fill="#ccc")
 
-    def _draw_labels(self):
+    def draw_labels(self):
         w = self.canvas.winfo_width()
         h = self.canvas.winfo_height()
         left_wx, top_wy = self.screen_to_world_float(0, 0)
@@ -123,11 +125,11 @@ class RouteMaker(tk.Toplevel):
                     sx, sy, text=txt, font=self.font_small, fill="#333"
                 )
 
-    def _draw_route(self):
+    def draw_route(self):
         if not self.route:
             return
 
-        # dessiner les traits
+        # drawing the lines
         for i in range(len(self.route) - 1):
             a = self.route[i]
             b = self.route[i + 1]
@@ -135,62 +137,65 @@ class RouteMaker(tk.Toplevel):
             bx, by = self.world_to_screen(*b)
             self.canvas.create_line(ax, ay, bx, by, fill="black", width=2)
 
-        # dessiner les points
+        # drawing the points
         for (x, y) in self.route:
             sx, sy = self.world_to_screen(x, y)
             r = 4  # rayon du point
             self.canvas.create_oval(sx - r, sy - r, sx + r, sy + r, fill="black")
 
-    # ---------------------------
-    # events
-    # ---------------------------
-    def _on_configure(self, event):
+    # # # # # #
+    # events  #
+    # # # # # #
+
+    def on_configure(self, event):
         self.redraw()
 
-    def _on_left_press(self, event):
-        self._click_pos = (event.x, event.y)
-        self._pan_start = (event.x, event.y)
-        self._pan_offset_start = (self.offset_x, self.offset_y)
-        self._dragged = False
+    def on_left_press(self, event):
+        self.click_pos = (event.x, event.y)
+        self.pan_start = (event.x, event.y)
+        self.pan_offset_start = (self.offset_x, self.offset_y)
+        self.dragged = False
 
-    def _on_left_drag(self, event):
-        if self._pan_start is None:
+    def on_left_drag(self, event):
+        if self.pan_start is None:
             return
-        dx = event.x - self._pan_start[0]
-        dy = event.y - self._pan_start[1]
+        dx = event.x - self.pan_start[0]
+        dy = event.y - self.pan_start[1]
         if abs(dx) > 2 or abs(dy) > 2:
-            self._dragged = True
-        self.offset_x = self._pan_offset_start[0] + dx
-        self.offset_y = self._pan_offset_start[1] + dy
+            self.dragged = True
+        self.offset_x = self.pan_offset_start[0] + dx
+        self.offset_y = self.pan_offset_start[1] + dy
         self.redraw()
 
-    def _on_left_release(self, event):
-        if not self._dragged:
-            self._add_to_route(event.x, event.y)
+    def on_left_release(self, event):
+        if not self.dragged:
+            self.add_to_route(event.x, event.y)
             self.redraw()
-        self._click_pos = None
-        self._pan_start = None
-        self._pan_offset_start = None
-        self._dragged = False
+        self.click_pos = None
+        self.pan_start = None
+        self.pan_offset_start = None
+        self.dragged = False
 
-    def _on_backspace(self, event):
-        """Supprime le dernier point ajouté au chemin"""
+    def on_backspace(self, event):
+        """Gets rid of the last added point"""
         if self.route:
             self.route.pop()
             self.redraw()
 
-    # ---------------------------
-    # route editing
-    # ---------------------------
-    def _add_to_route(self, sx, sy):
+    # # # # # # # # #
+    # route editing #
+    # # # # # # # # # 
+
+    def add_to_route(self, sx, sy):
         wx, wy = self.screen_to_world_float(sx, sy)
         cx = round(wx)
         cy = round(wy)
         self.route.append((cx, cy))
 
-    # ---------------------------
-    # save / load
-    # ---------------------------
+    # # # # # # # #
+    # save / load #
+    # # # # # # # #
+
     def open_save_window(self):
         popup = tk.Toplevel(self)
         popup.title("Entrez le nom du chemin à sauvegarder")
@@ -205,7 +210,6 @@ class RouteMaker(tk.Toplevel):
             if not name:
                 messagebox.showerror("Erreur", "Entrez un nom pour le chemin à sauvegarder")
                 return
-            # To do: Verifier si le fichier existe deja, s'il existe deja demander confirmation a l'utilisateur pour l'ecrasement des donnees
             self.try_save_route(name)
             popup.destroy()
 

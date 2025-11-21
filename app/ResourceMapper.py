@@ -5,11 +5,11 @@ import tkinter.font as tkFont
 from pynput import mouse
 from pynput.mouse import Button
 import os
-import cv2
-from bot_script import screenshot_high_res, get_map
+from bot_script import get_map
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RESOURCE_PATH = os.path.join(BASE_DIR, "resources", "resources.db")
 
+## Database to store the resource positions
 def init_db():
     conn = sqlite3.connect(RESOURCE_PATH)
     c = conn.cursor()
@@ -26,24 +26,31 @@ def init_db():
     conn.commit()
     conn.close()
 
-def save_resources(map_pos, resources, zone="Douze", overwrite=False):
+def save_resources(map_pos, resources, zone="Amakna", overwrite=False):
+    """
+    self explanatory: add a resource to the database.
+    resources is a dictionnary whose keys are the resources types and values are the list of positions 
+    on the screen corresponding to that type. 
+    If of the resource types are already in the database for that map, we return those conflicting resources. 
+    If the function is called with overwrite=True, we delete the old data and replace it with the new.
+    """
     conn = sqlite3.connect(os.path.join(BASE_DIR, "resources", "resources.db"))
     c = conn.cursor()
     c.execute("SELECT DISTINCT type FROM resources WHERE map_x = ? AND map_y = ? AND zone = ?", (map_pos[0], map_pos[1], zone))
-    # On identifie les types de ressources déjà enregistrés pour la map
+    # Get the resources already registered for that map, if any
     existing_resources = [row[0] for row in c.fetchall()]
     conflicting_resources = []
-    for type, pos in resources.items(): # resource = dictionnaire clé = type et value = listes des positions
-        if pos and type in existing_resources: # si la liste de positions est vide -> pas de conflit
-            conflicting_resources.append(type) # On liste les types déjà présent que l'utilisateur veut ajouter
+    for type, pos in resources.items(): # Check wether the positions we want to add conflict with the database
+        if pos and type in existing_resources:
+            conflicting_resources.append(type) 
 
-    if conflicting_resources:
+    if conflicting_resources: # If they do,
         if not overwrite:
-            return conflicting_resources # La fonction est appelée une première fois sans overwrite: on renvoie la liste des types de ressources conflictuels
+            return conflicting_resources # Return the liste of conflicting resources to warn the user
         else:
-            for resource in conflicting_resources: # La fonction est rappelée avec overwrite: on supprime les types conflictuels 
+            for resource in conflicting_resources: # Overwrite only after getting user approval 
                 c.execute("DELETE FROM resources WHERE type = ? AND map_x = ? AND map_y = ? AND zone = ?", (resource, map_pos[0], map_pos[1], zone))
-    # Pas de conflit ou overwrite activé: on met à jour la base de donnée
+    # If no conflicts, simply save the data
     for key, value in resources.items():      
         for pos in value:
             c.execute("INSERT INTO resources (map_x, map_y, type, pos_x, pos_y, zone) VALUES (?, ?, ?, ?, ?, ?)",
@@ -53,23 +60,40 @@ def save_resources(map_pos, resources, zone="Douze", overwrite=False):
     return None
 
 class ResourceMapper(tk.Tk):
+    """
+    This is the sub app used to save the resource positions in the database. 
+    To do so, we need: 
+    -the type of resource to add, for example 'Châtaigner'
+    -the map position, for example [-17, 5]
+    -the game zone the resource is in. Different game zones make coordinates degenerate so this is important. 
+    Defaults to 'Amakna', which is the main continent of the game.
+    -the list of positions to add to the database, where the bot actually needs to click.
+    
+    Once the user has added a resource to the app, he can activate it to then add any position he right clicks on. 
+    He then confirms and all those positions are added to the database.
+
+    For the map coordinates, there are two modes:
+    -Automatic, the coordinates are retrieved by using the get_map function. The default.
+    -Manual, the user inputs it by hand
+    """
     def __init__(self):
         super().__init__()
         self.attributes("-topmost", True)
         self.title("Resourde Mapper")
-        # état
-        self.active_resource = None
-        self.resources = {}
+
+        # Internal states used by the app
+        self.active_resource = None # The resource we are currently clicking on
+        self.resources = {} # The types of resources to add
         self.resource_buttons = {}
         self.resource_labels = {}
         self.clear_buttons = {}
         self.delete_buttons = {}
-        self.selected_mode = tk.StringVar(value="automatique")
+        self.selected_mode = tk.StringVar(value="automatique") 
         self.window_focused = tk.IntVar(value=1)
 
-        self.options = ["automatique", "manuel"]
+        self.options = ["automatique", "manuel"] # The two modes to get the map position
 
-        # === FRAME 1 : coordonnées ===
+        # === Top frame: input the coordinates of the map ===
         self.top_frame = tk.Frame(self)
         self.top_frame.pack(side="top", fill="x", pady=5)
 
@@ -92,14 +116,14 @@ class ResourceMapper(tk.Tk):
         self.y_spin.delete(0, "end")
         self.y_spin.insert(0, "0")
 
-        # === FRAME 2 : ressources dynamiques ===
+        # === Middle frame : dynamic resource buttons ===
         self.resource_frame = tk.Frame(self)
         self.resource_frame.pack(anchor="w", pady=5)
-
-        self.add_btn = tk.Button(self.resource_frame, text="+", command=self.open_add_resource_popup)
+        # We hereby only define the add button. The resource buttons are added by the user using this add button. They are displayed row by row.
+        self.add_btn = tk.Button(self.resource_frame, text="+", command=self.open_add_resource_popup) 
         self.add_btn.grid(row=0, column=0, pady=5)
 
-        # === FRAME 3 : boutons bas ===
+        # === Bottom frame: input the zone and add the map ===
         self.bottom_frame = tk.Frame(self)
         self.bottom_frame.pack(side="top", pady=10)
 
@@ -109,37 +133,38 @@ class ResourceMapper(tk.Tk):
         self.save_btn = tk.Button(self.bottom_frame, text="Save Map", command=self.save_map)
         self.save_btn.pack(side="left")
 
-        # listener souris
+        # Mouse listener. Clicks are handled by the on_click function
         self.listener = mouse.Listener(on_click=self.on_click)
         self.listener.start()
 
+        # This part is a bit cryptic. We want the entry zone_entry to lose the focus when we click anywhere else, which it doesn't by default.
         def clear_focus(event):
             if event.widget != self.zone_entry:
                 self.focus_set()
 
         def get_focus(event):
             return
+        # When the window loses focus, we initialise an internal variable. This ensures we ignore the first click outside the window.
         def lose_focus(event):
             self.window_focused = 1
 
         self.bind("<Button-1>", clear_focus)
-
         self.bind("<FocusIn>", get_focus)
         self.bind("<FocusOut>", lose_focus)
 
     def open_add_resource_popup(self):
-        # création du pop-up
+        # Create the popup
         popup = tk.Toplevel(self)
         popup.title("Ajouter un type de ressource")
         popup.attributes("-topmost", True)
 
-        # entrée de la ressource
+        # Add an entry for the resource type name
         tk.Label(popup, text="Ressource à ajouter:").pack(padx=10, pady=5)
         entry = tk.Entry(popup)
         entry.pack(padx=10, pady=5)
         entry.focus_set()
 
-        def validate():
+        def validate(): # If the resource is not already added as a button, we add it and destroy the popup
             name = entry.get().strip()
             if not name:
                 messagebox.showerror("Erreur", "Entrez un nom pour la ressource")
@@ -155,10 +180,10 @@ class ResourceMapper(tk.Tk):
         tk.Button(popup, text="Valider", command=validate).pack(pady=5)
 
     def add_resource_button(self, name):
-        row = len(self.resource_buttons) + 1 # ligne à laquelle on ajoute le bouton 
+        row = len(self.resource_buttons) + 1 # Row at which we add the button. Equal to the number of resource buttons that already exist, plus one.
         small_font = tkFont.Font(size=8)
 
-        # On ajoute le bouton de la resource 
+        # We add three buttons: one to activate/deactivate the resource. One to clear the positions. One to delete the resource button. One button to rule them all and into darknes bind them.
         btn = tk.Button(self.resource_frame, text=name + " (OFF)", command=lambda n=name: self.toggle_resource(n))
         btn.grid(row=row, column=0, sticky="w", pady=2)
         clear_btn = tk.Button(self.resource_frame, text="clear", command=lambda n=name: self.clear(n))
@@ -167,42 +192,43 @@ class ResourceMapper(tk.Tk):
         delete_btn.grid(row=row, column=2, sticky="w", pady=2)
 
 
-        # On met à jour les dictionnaires de l'app
+        # We add that resource to the dictionary, together with its buttons.
         self.resources[name] = []
         self.resource_buttons[name] = btn
         self.clear_buttons[name] = clear_btn
         self.delete_buttons[name] = delete_btn
 
-        # On rajoute un Label à côté du bouton
+        # We add a label next to the buttons. It will be updated with the positions we click when the resource is active.
         lbl = tk.Label(self.resource_frame, text="", anchor="w", justify="left", font=small_font, wraplength=200)
         lbl.grid(row=row, column=3, sticky="w", pady=2)
         self.resource_labels[name] = lbl
 
-        # On descend le bouton "+"
+        # We added a row. So the add button needs to go down a row to always be at the bottom of the resource buttons.
         self.add_btn.grid(row=row+1, column=0, pady = 5)
 
     def toggle_resource(self, name):
-        # On éteint le bouton actif
+        """
+        This function is called to activate/deactivate a resource button
+        If a another button was already activated, it is deactivated. Only one resource can be active at a time.
+        """
+        # If a resource is already active, deactivate it
         if self.active_resource:
-            self.resource_buttons[self.active_resource].config(text=self.active_resource + " (OFF)")
-            # Si la ressource était déjà activée, on la désactive
-            if name == self.active_resource:
+            self.resource_buttons[self.active_resource].config(text=self.active_resource + " (OFF)") # Turn off its button
+            if name == self.active_resource: # if the button clicked was the active resource, then we are left with no active resource
                 self.active_resource = None
-            # Sinon on active la ressource appelée
-            else:
+            else: # Else we activate the button that was pushed
                 self.active_resource = name
                 self.resource_buttons[name].config(text=name + " (ON)")
-        # Si aucun bouton n'était actif
-        else:
+        else: # If no resource was already active, we simply activate the button that was pushed
             self.active_resource = name
             self.resource_buttons[name].config(text=name + " (ON)")
 
-    # Efface les positions associées à un type de ressources
+    # Clear the positions associated with a resource
     def clear(self, name):
         self.resources[name] = []
         self.resource_labels[name].config(text="")
 
-    # Supprime le type de ressource
+    # Delete everything from a ressource. Called when we press the delete button
     def delete(self, name):
         del self.resources[name]
         self.resource_buttons[name].destroy()
@@ -221,19 +247,22 @@ class ResourceMapper(tk.Tk):
             win_h = self.winfo_height()
 
             TITLEBAR_HEIGHT = 25
-            # les clicks dans la fenêtre sont ignorés
+            # The clicks inside the window are ignored for the purpose of adding resource positions
             if win_x <= x <= win_x + win_w + 1 and win_y - TITLEBAR_HEIGHT<= y <= win_y + win_h + TITLEBAR_HEIGHT + 1:
                 return
+            # The first click outside the window of the resource mapper is ignored (recall that self.window_focused is updated to 1 when the app loses focus)
             if self.window_focused < 1:
-                # On ajoute la ressource
-                self.resources[self.active_resource].append((int(x), int(y)))
-                # On recalcule le label
-                resource_label = " ".join(f"({rx},{ry})" for rx, ry in self.resources[self.active_resource])
+                self.resources[self.active_resource].append((int(x), int(y))) # We add the position to the list inside the dictionary
+                resource_label = " ".join(f"({rx},{ry})" for rx, ry in self.resources[self.active_resource]) # We update the label next to the resource button
                 self.resource_labels[self.active_resource].config(text=resource_label)
             else:
                 self.window_focused -= 1
 
     def save_map(self):
+        """
+        Save the map. Updates the database with the resource positions.
+        If a conflict is detected, asks the user for confirmation.
+        """
         if self.active_resource:
             self.resource_buttons[self.active_resource].config(text=self.active_resource+" (OFF)")
             self.active_resource = None
@@ -253,19 +282,19 @@ class ResourceMapper(tk.Tk):
         
         zone = self.zone_entry.get()
         if not zone:
-            zone = "Douze"
+            zone = "Amakna"
         if map_x is None or map_y is None:
             messagebox.showerror("Error", "Les coordonnées de la carte ne peuvent être vides")
             return
         map_pos = [map_x, map_y]
         conflicting_resources = save_resources(map_pos, self.resources, zone)
         if conflicting_resources:
-            # création du pop-up
+            # pop up creation
             popup = tk.Toplevel(self)
             popup.title("Ressources déjà enregistrées")
             popup.attributes("-topmost", True)
 
-            # entrée de la ressource
+            # Ask the user wether he wants to overwrite the existing data
             label = "Les ressources suivantes ont déjà été enregistrées pour cette carte:\n"
             for resource in conflicting_resources:
                 label += resource + "\n"

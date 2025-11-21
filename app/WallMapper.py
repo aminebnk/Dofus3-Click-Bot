@@ -3,7 +3,7 @@ from tkinter import font, messagebox, filedialog
 import math
 import os
 
-GRID_SIZE = 200
+GRID_SIZE = 80
 HALF = GRID_SIZE // 2
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WALLS_FOLDER = os.path.join(BASE_DIR, "resources", "walls")
@@ -11,7 +11,8 @@ WALLS_FOLDER = os.path.join(BASE_DIR, "resources", "walls")
 class WallMapper(tk.Toplevel):
     def __init__(self, master=None):
         super().__init__(master)
-        self.title("Grid Wall Editor")
+        self.title("Wall Mapper")
+        self.geometry("900x600")
 
         # Top bar
         top = tk.Frame(self)
@@ -22,16 +23,13 @@ class WallMapper(tk.Toplevel):
         self.load_btn = tk.Button(top, text="Charger", command=self.load_walls)
         self.load_btn.pack(side="right", padx=6, pady=6)
 
-        tk.Label(
-            top,
-            text="Clic gauche = toggle arête | Glisser gauche = déplacer la vue"
-        ).pack(side="left", padx=6)
+        tk.Label(top,text="Clic gauche = activer/désactiver une arête | Maintenu = faire glisser la grille").pack(side="left", padx=6)
 
         # Canvas
         self.canvas = tk.Canvas(self, bg="white")
         self.canvas.pack(fill="both", expand=True)
 
-        # State
+        # States
         self.cell_size = 80
         self.offset_x = 0
         self.offset_y = 0
@@ -42,22 +40,21 @@ class WallMapper(tk.Toplevel):
         self.font_small = font.Font(size=12)
 
         # Mouse state
-        self._pan_start = None
-        self._pan_offset_start = None
-        self._click_pos = None
-        self._dragged = False
+        self.pan_start = None
+        self.pan_offset_start = None
+        self.click_pos = None
+        self.dragged = False
 
         # Bind events
-        self.canvas.bind("<Configure>", self._on_configure)
-        self.canvas.bind("<ButtonPress-1>", self._on_left_press)
-        self.canvas.bind("<B1-Motion>", self._on_left_drag)
-        self.canvas.bind("<ButtonRelease-1>", self._on_left_release)
+        self.canvas.bind("<Configure>", self.on_configure)
+        self.canvas.bind("<ButtonPress-1>", self.on_left_press)
+        self.canvas.bind("<B1-Motion>", self.on_left_drag)
+        self.canvas.bind("<ButtonRelease-1>", self.on_left_release)
 
         self.redraw()
 
-    # ---------------------------
     # coordinate transforms
-    # ---------------------------
+
     def world_to_screen(self, wx, wy):
         cx = self.canvas.winfo_width() // 2
         cy = self.canvas.winfo_height() // 2
@@ -72,16 +69,16 @@ class WallMapper(tk.Toplevel):
         wy = (sy - cy - self.offset_y) / self.cell_size
         return wx, wy
 
-    # ---------------------------
+
     # drawing
-    # ---------------------------
+
     def redraw(self):
         self.canvas.delete("all")
-        self._draw_grid()
-        self._draw_labels()
-        self._draw_walls()
+        self.draw_grid()
+        self.draw_labels()
+        self.draw_walls()
 
-    def _draw_grid(self):
+    def draw_grid(self):
         w = self.canvas.winfo_width()
         h = self.canvas.winfo_height()
         left_wx, top_wy = self.screen_to_world_float(0, 0)
@@ -92,19 +89,19 @@ class WallMapper(tk.Toplevel):
         min_y = max(math.floor(top_wy - 0.5), -HALF)
         max_y = min(math.ceil(bottom_wy + 0.5), HALF)
 
-        # Lignes verticales
+        # Vertical lines
         for gx in range(min_x, max_x + 1):
             sx1, sy1 = self.world_to_screen(gx + 0.5, min_y)
             sx2, sy2 = self.world_to_screen(gx + 0.5, max_y)
             self.canvas.create_line(sx1, sy1, sx2, sy2, fill="#ccc")
 
-        # Lignes horizontales
+        # Horizontal lines
         for gy in range(min_y, max_y + 1):
             sx1, sy1 = self.world_to_screen(min_x, gy + 0.5)
             sx2, sy2 = self.world_to_screen(max_x, gy + 0.5)
             self.canvas.create_line(sx1, sy1, sx2, sy2, fill="#ccc")
 
-    def _draw_labels(self):
+    def draw_labels(self):
         w = self.canvas.winfo_width()
         h = self.canvas.winfo_height()
         left_wx, top_wy = self.screen_to_world_float(0, 0)
@@ -123,59 +120,59 @@ class WallMapper(tk.Toplevel):
                     sx, sy, text=txt, font=self.font_small, fill="#333"
                 )
 
-    def _draw_walls(self):
+    def draw_walls(self):
         for (a, b) in self.walls:
             ax, ay = a
             bx, by = b
             if abs(ax - bx) + abs(ay - by) != 1:
                 continue
-            if ax == bx:  # mur horizontal
+            if ax == bx:  # horizontal wall
                 wx1, wy1 = self.world_to_screen(ax - 0.5, (ay + by) / 2)
                 wx2, wy2 = self.world_to_screen(ax + 0.5, (ay + by) / 2)
-            else:  # mur vertical
+            else:  # vertical wall
                 wx1, wy1 = self.world_to_screen((ax + bx) / 2, ay - 0.5)
                 wx2, wy2 = self.world_to_screen((ax + bx) / 2, ay + 0.5)
             self.canvas.create_line(wx1, wy1, wx2, wy2, fill="red", width=3)
 
-    # ---------------------------
+
     # events
-    # ---------------------------
-    def _on_configure(self, event):
+
+    def on_configure(self, event):
         self.redraw()
 
-    def _on_left_press(self, event):
-        self._click_pos = (event.x, event.y)
-        self._pan_start = (event.x, event.y)
-        self._pan_offset_start = (self.offset_x, self.offset_y)
-        self._dragged = False
+    def on_left_press(self, event):
+        self.click_pos = (event.x, event.y)
+        self.pan_start = (event.x, event.y)
+        self.pan_offset_start = (self.offset_x, self.offset_y)
+        self.dragged = False
 
-    def _on_left_drag(self, event):
-        if self._pan_start is None:
+    def on_left_drag(self, event):
+        if self.pan_start is None:
             return
-        dx = event.x - self._pan_start[0]
-        dy = event.y - self._pan_start[1]
+        dx = event.x - self.pan_start[0]
+        dy = event.y - self.pan_start[1]
         if abs(dx) > 2 or abs(dy) > 2:
-            self._dragged = True
-        self.offset_x = self._pan_offset_start[0] + dx
-        self.offset_y = self._pan_offset_start[1] + dy
+            self.dragged = True
+        self.offset_x = self.pan_offset_start[0] + dx
+        self.offset_y = self.pan_offset_start[1] + dy
         self.redraw()
 
-    def _on_left_release(self, event):
-        if not self._dragged:
-            self._toggle_nearest_edge(event.x, event.y)
+    def on_left_release(self, event):
+        if not self.dragged:
+            self.toggle_nearest_edge(event.x, event.y)
             self.redraw()
-        self._click_pos = None
-        self._pan_start = None
-        self._pan_offset_start = None
-        self._dragged = False
+        self.click_pos = None
+        self.pan_start = None
+        self.pan_offset_start = None
+        self.dragged = False
 
-    # ---------------------------
+
     # toggle edges
-    # ---------------------------
-    def _normalize_edge(self, a, b):
+
+    def normalize_edge(self, a, b):
         return (a, b) if a <= b else (b, a)
 
-    def _toggle_nearest_edge(self, sx, sy):
+    def toggle_nearest_edge(self, sx, sy):
         wxf, wyf = self.screen_to_world_float(sx, sy)
         cx = round(wxf)
         cy = round(wyf)
@@ -198,15 +195,13 @@ class WallMapper(tk.Toplevel):
                 best = (a, b)
 
         if best and best_dist < 0.45:
-            edge = self._normalize_edge(*best)
+            edge = self.normalize_edge(*best)
             if edge in self.walls:
                 self.walls.remove(edge)
             else:
                 self.walls.add(edge)
 
-    # ---------------------------
     # save / load
-    # ---------------------------
 
     def open_save_window(self):
         popup = tk.Toplevel(self)
@@ -222,7 +217,6 @@ class WallMapper(tk.Toplevel):
             if not name:
                 messagebox.showerror("Erreur", "Entrez un nom pour la zone concernée")
                 return
-            # To do: Verifier si le fichier existe deja, s'il existe deja demander confirmation a l'utilisateur pour l'ecrasement des donnees
             self.try_save_walls(name)
             popup.destroy()
 
@@ -277,7 +271,7 @@ class WallMapper(tk.Toplevel):
                         b_str = b_str.replace("(", "").replace(")", "")
                         ax, ay = map(int, a_str.split(","))
                         bx, by = map(int, b_str.split(","))
-                        edges.add(self._normalize_edge((ax, ay), (bx, by)))
+                        edges.add(self.normalize_edge((ax, ay), (bx, by)))
                     except Exception:
                         continue
             self.walls = edges

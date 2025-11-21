@@ -5,104 +5,138 @@ import pytesseract
 import Quartz.CoreGraphics as CG
 import numpy as np
 from pynput import keyboard
-from pynput.keyboard import Controller as KeyboardController
+from pynput.keyboard import Key, Controller as KeyboardController
 import pyautogui
 import time
 from scipy.ndimage import maximum_filter
 import random
 import torch
 from torch import nn
+import heapq
+import torch.nn.functional as F
+import re
 
-device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+device = torch.device("mps" if torch.backends.mps.is_available() else "cpu") # Use the CPU to run the Convolutional Neurol Network
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MONSTER_DIR = os.path.join(BASE_DIR, "resources", "templates", "fight")
+FIGHT_DIR = os.path.join(BASE_DIR, "resources", "templates", "fight")
 
-MONSTER_NORTHEAST = cv2.imread(MONSTER_DIR + "/monster_northeast.png", cv2.IMREAD_UNCHANGED)
-MONSTER_NORTHWEST = cv2.imread(MONSTER_DIR + "/monster_northwest.png", cv2.IMREAD_UNCHANGED)
-MONSTER_SOUTHEAST = cv2.imread(MONSTER_DIR + "/monster_southeast.png", cv2.IMREAD_UNCHANGED)
-MONSTER_SOUTHWEST = cv2.imread(MONSTER_DIR + "/monster_southwest.png", cv2.IMREAD_UNCHANGED)
-NORTHEAST_BGR = MONSTER_NORTHEAST[:, :, :3]
-NORTHEAST_ALPHA = MONSTER_NORTHEAST[:, :, 3]
-NORTHWEST_BGR = MONSTER_NORTHWEST[:, :, :3]
-NORTHWEST_ALPHA = MONSTER_NORTHWEST[:, :, 3]
-SOUTHEAST_BGR = MONSTER_SOUTHEAST[:, :, :3]
-SOUTHEAST_ALPHA = MONSTER_SOUTHEAST[:, :, 3]
-SOUTHWEST_BGR = MONSTER_SOUTHWEST[:, :, :3]
-SOUTHWEST_ALPHA = MONSTER_SOUTHWEST[:, :, 3]
-CHALLENGES = "CHOISIR LES\nCHALLENGES"
-PRET = "PRET"
-FIN = "FIN DE TOUR"
-TOP_CORNER = (975, 835)
-SIZE = (120, 28)
+# Load templates for monster recognition
+M_NORTHEAST = cv2.imread(FIGHT_DIR + "/monster_northeast.png", cv2.IMREAD_UNCHANGED)
+M_NORTHWEST = cv2.imread(FIGHT_DIR + "/monster_northwest.png", cv2.IMREAD_UNCHANGED)
+M_SOUTHEAST = cv2.imread(FIGHT_DIR + "/monster_southeast.png", cv2.IMREAD_UNCHANGED)
+M_SOUTHWEST = cv2.imread(FIGHT_DIR + "/monster_southwest.png", cv2.IMREAD_UNCHANGED)
+M_NORTHEAST_BGR = M_NORTHEAST[:, :, :3]
+M_NORTHEAST_ALPHA = M_NORTHEAST[:, :, 3]
+M_NORTHWEST_BGR = M_NORTHWEST[:, :, :3]
+M_NORTHWEST_ALPHA = M_NORTHWEST[:, :, 3]
+M_SOUTHEAST_BGR = M_SOUTHEAST[:, :, :3]
+M_SOUTHEAST_ALPHA = M_SOUTHEAST[:, :, 3]
+M_SOUTHWEST_BGR = M_SOUTHWEST[:, :, :3]
+M_SOUTHWEST_ALPHA = M_SOUTHWEST[:, :, 3]
 
-## U-Nets model definition
+# Load templates for character recognition
+C_NORTHEAST = cv2.imread(FIGHT_DIR + "/sacri_northeast.png", cv2.IMREAD_UNCHANGED)
+C_NORTHWEST = cv2.imread(FIGHT_DIR + "/sacri_northwest.png", cv2.IMREAD_UNCHANGED)
+C_SOUTHEAST = cv2.imread(FIGHT_DIR + "/sacri_southeast.png", cv2.IMREAD_UNCHANGED)
+C_SOUTHWEST = cv2.imread(FIGHT_DIR + "/sacri_southwest.png", cv2.IMREAD_UNCHANGED)
+C_NORTHEAST_BGR = C_NORTHEAST[:, :, :3]
+C_NORTHEAST_ALPHA = C_NORTHEAST[:, :, 3]
+C_NORTHWEST_BGR = C_NORTHWEST[:, :, :3]
+C_NORTHWEST_ALPHA = C_NORTHWEST[:, :, 3]
+C_SOUTHEAST_BGR = C_SOUTHEAST[:, :, :3]
+C_SOUTHEAST_ALPHA = C_SOUTHEAST[:, :, 3]
+C_SOUTHWEST_BGR = C_SOUTHWEST[:, :, :3]
+C_SOUTHWEST_ALPHA = C_SOUTHWEST[:, :, 3]
 
-class DoubleConv(nn.Module):
-    def __init__(self, in_ch, out_ch):
-        super().__init__()
-        self.conv = nn.Sequential(
-            nn.Conv2d(in_ch, out_ch, 3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(out_ch, out_ch, 3, padding=1),
-            nn.ReLU(inplace=True)
-        )
+FIGHT_POPUP_TEMPLATE = cv2.imread(os.path.join(BASE_DIR, "resources", "templates", "fight", "victory_popup.png"), cv2.IMREAD_COLOR)
+CHALLENGES = "CHOISIR LES\nCHALLENGES" # When a fight is preparing, the fight button says "CHOISIR LES CHALLENGS": chose your challenges
+PRET = "PRET" # Then the button says "PRET": ready
+FIN = "FIN DE TOUR" # When it's your turn to play, it says "FIN DE TOUR": end your turn
+CORNER_FIGHT_BTN = (975, 835)
+SIZE_FIGHT_BTN = (120, 28)
+END_TURN_POS = (1070, 842)
+SPELL_POS = (500, 845)
+SPELL_RANGE = 5
 
-    def forward(self, x):
-        return self.conv(x)
+# The fight is confined to a scene in the middle of the screen, so we only make the template matching there to save some computation
 
-class UNet(nn.Module):
+FIGHT_SCN_TOP = 175
+FIGHT_SCN_LEFT = 220
+FIGHT_SCN_WIDTH = 980
+FIGHT_SCN_HEIGHT = 555
+
+## Loading CNN classification model
+
+"""
+The class TileClassifier defines the architecture for a CNN (Convolutional Neurol Network)
+used to determine wether a small 19x19 picture represents a tile the character can move to.
+The model weigths are then loaded into a TileClassifier object.
+"""
+
+class TileClassifier(nn.Module):
     def __init__(self):
         super().__init__()
-        self.down1 = DoubleConv(3, 16)
-        self.pool1 = nn.MaxPool2d(2)
-        self.down2 = DoubleConv(16, 32)
-        self.pool2 = nn.MaxPool2d(2)
+        
+        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
+        #self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
 
-        self.bottleneck = DoubleConv(32, 64)
-
-        self.up2 = nn.ConvTranspose2d(64, 32, 2, stride=2)
-        self.conv2 = DoubleConv(64, 32)
-        self.up1 = nn.ConvTranspose2d(32, 16, 2, stride=2)
-        self.conv1 = DoubleConv(32, 16)
-
-        self.final = nn.Conv2d(16, 1, 1)
+        self.fc1 = nn.Linear(16 * 19 * 19, 32)
+        self.fc2 = nn.Linear(32, 1)
 
     def forward(self, x):
-        c1 = self.down1(x)
-        p1 = self.pool1(c1)
-        c2 = self.down2(p1)
-        p2 = self.pool2(c2)
+        x = F.relu(self.conv1(x))
+        #x = F.relu(self.conv2(x))
 
-        b = self.bottleneck(p2)
+        x = x.view(x.size(0), -1)
 
-        u2 = self.up2(b)
-        u2 = torch.cat([u2, c2], dim=1)
-        c3 = self.conv2(u2)
+        x = F.relu(self.fc1(x))
 
-        u1 = self.up1(c3)
-        u1 = torch.cat([u1, c1], dim=1)
-        c4 = self.conv1(u1)
+        return self.fc2(x)
 
-        return torch.sigmoid(self.final(c4))
-    
-## Load model
-
-model = UNet().to(device)
-model.load_state_dict(torch.load("tile_segmentation_unet.pth", map_location=device))
+model = TileClassifier().to(device) # We use the CPU to go faster
+model.load_state_dict(torch.load(os.path.join(BASE_DIR, "tile_cnn.pth"), map_location="cpu")) # We load the weights from a previous training
 model.eval()
+
+## Define the vector class used to get the tiles surrouding the character
+
+"""
+Because of the 3D projected to 2D perspective, the grid of the fight system is tilted and the y dimension is compressed.
+We define a custom vector class suited to that geometry for the purpose of computing the tiles a character can move to 
+and the distance in 'tiles' that separates two entities for spell range.
+The distance corresponds to the Manhattan distance, but for the non orthonormal base of the grid: u1 = -2 * ux + uy, u2 = 2 * ux + uy 
+"""
+
+class vector:
+    def __init__(self, x=-36.4, y=18.3):
+        self.x = x
+        self.y = y
+
+    def rotate_hourly(self):
+        if self.x * self.y > 0:
+            self.x = - self.x
+        elif self.x * self.y < 0:
+            self.y = - self.y
+
+    def __add__(self, other):
+        return vector(self.x + other.x, self.y + other.y)
+    
+    def dist(self, other):
+        return max(2 * abs(self.y - other.y), abs(self.x - other.x)) / 36.4 # We divide by 36 to get the distance in tiles. Tiles are separted roughly 36 pixels across in the x direction and 18 in the y direction
 
 def screenshot_high_res(x, y, w, h):
     """
-    Capture une zone de l'écran en numpy (BGR).
-    x, y = coordonnées du coin haut-gauche
-    w, h = largeur et hauteur de la zone
+    Takes a high-definition screenshot using Core Graphics and converts it to numpy (BGR).
+    x, y = coordinates of the top-left corner
+    w, h = width and height of the zone
+
+    Note: This is slower than the mss library but has better definition. Used for small areas where text recognition is needed.
     """
     display_id = CG.CGMainDisplayID()
 
-    # Définir la zone à capturer
+    # Screenshot rectangle
     rect = CG.CGRectMake(x, y, w, h)
 
-    # Capture la zone
+    # Capture
     image = CG.CGDisplayCreateImageForRect(display_id, rect)
 
     width = CG.CGImageGetWidth(image)
@@ -119,16 +153,24 @@ def screenshot_high_res(x, y, w, h):
         buffer=buf
     )
 
-    arr = arr[:, :width*4]  # On garde seulement la partie utile
-    arr = arr.reshape((height, width, 4))  # RGBA
-    img = cv2.cvtColor(arr, cv2.COLOR_BGRA2BGR)  # Conversion en BGR
+    arr = arr[:, :width*4]  # Taking a screenshot adds balck borders for some reason. We only keep the useful part of the image.
+    arr = arr.reshape((height, width, 4))  # And reshape it
+    img = cv2.cvtColor(arr, cv2.COLOR_BGRA2BGR)  # And convert it to BGR, which is what cv2 works with by default
     return img
 
 def get_fighting_text(img):
+
+    """
+    When a fight is ongoing or in the preparation step, a green button appears at the bottom right of the screen.
+    We use text recognition to get the state of that button and determine wether a fight is ongoing, and if at what
+    step we are.
+    See the function get_map in bot_script.py for details on the text recognition.
+    """
+
     img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     for ligne in img:
         for pixel in ligne:
-            if pixel[1] <= 0:
+            if pixel[1] == 0:
                 pixel[0] = 0
                 pixel[1] = 0
                 pixel[2] = 0
@@ -139,10 +181,14 @@ def get_fighting_text(img):
     img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     img = cv2.GaussianBlur(img, (3,3), 0.6)
 
-    text = pytesseract.image_to_string(img, lang="fra")
+    text = pytesseract.image_to_string(img, lang="fra") # Je suis français donc le jeu est en francais mdr
     return text.strip()
 
 def get_grey_fighting_text(img):
+    """
+    When it's currently the monster turn, the fight button turns grey, so we need to modify
+    the previous function slightly to detect the text.
+    """
     img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     for ligne in img:
         for pixel in ligne:
@@ -167,91 +213,315 @@ def get_grey_fighting_text(img):
     return text
 
 def check_fight(fight_status):
+    """
+    We simply read the fight button text to know wether a fight is ongoing or in preparation
+    """
+
     text = get_fighting_text(fight_status)
     grey_text = get_grey_fighting_text(fight_status)
     if text == FIN or text == PRET or text == CHALLENGES or grey_text == FIN:
         return True
     else:
         return False
+    
+def check_popup():
+    """
+    When the fight is over, a victory pop up pops up. 
+    This function identifies it with template matching and closes it by pressing the esc. key"""
+    with mss.mss() as sct:
+                region = {"top": 400, "left": 500, "width": 400, "height": 150}
+                img = sct.grab(region)
+                img = np.array(img)
+                img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+    match = cv2.matchTemplate(img, FIGHT_POPUP_TEMPLATE, cv2.TM_SQDIFF_NORMED)
+    if np.min(match) < 25e-3:
+        keyboard = KeyboardController()
+        keyboard.press(Key.esc)
+        time.sleep(0.03)
+        keyboard.release(Key.esc)
+        return True
+    return False
 
-def get_monster_pos(img):
-    northwest_match = cv2.matchTemplate(img, NORTHWEST_BGR, cv2.TM_SQDIFF_NORMED, mask=NORTHWEST_ALPHA)
-    northeast_match = cv2.matchTemplate(img, NORTHEAST_BGR, cv2.TM_SQDIFF_NORMED, mask=NORTHEAST_ALPHA)
-    southeast_match = cv2.matchTemplate(img, SOUTHEAST_BGR, cv2.TM_SQDIFF_NORMED, mask=SOUTHEAST_ALPHA)
-    southwest_match = cv2.matchTemplate(img, SOUTHWEST_BGR, cv2.TM_SQDIFF_NORMED, mask=SOUTHWEST_ALPHA)
-    print(min(np.min(northeast_match), np.min(northwest_match), np.min(southeast_match), np.min(southwest_match)))
+def get_monster_pos(img, first_found=True):
+    """
+    This function takes in an image and returns the position of the monsters identified by template matching.
+    Returns [-1, -1] if no monsters were found.
+    Four templates are necessary since the monster can be facing 4 different ways.
+    There are two modes: 
+    -first-found=True returns the first monster position found. This speeds up the function on average and is
+    when we know there is one and only one monster to be found
+    -first-found=False returns a list of the positions of all the matches.
+    We only use the first-found=True version of this function for this version of the BOT.
+    """
+
+    threshold = 55e-3 # detection threshold
+    if first_found:
+        northwest_match = np.nan_to_num(cv2.matchTemplate(img, M_NORTHWEST_BGR, cv2.TM_SQDIFF_NORMED, mask=M_NORTHWEST_ALPHA), nan=np.inf)
+        northwest_match = (northwest_match < threshold) & (northwest_match == np.min(northwest_match))
+        nw_indices = np.argwhere(northwest_match) + [13, 11] # The match position corresponds to the top left corner. We adjust it to get the center of the monster
+        if nw_indices.any():
+            return nw_indices[0]
+        northeast_match = np.nan_to_num(cv2.matchTemplate(img, M_NORTHEAST_BGR, cv2.TM_SQDIFF_NORMED, mask=M_NORTHEAST_ALPHA), nan=np.inf)
+        northeast_match = (northeast_match < threshold) & (northeast_match == np.min(northeast_match))
+        ne_indices = np.argwhere(northeast_match) + [13, 11]
+        if ne_indices.any():
+            return ne_indices[0]
+        southeast_match = np.nan_to_num(cv2.matchTemplate(img, M_SOUTHEAST_BGR, cv2.TM_SQDIFF_NORMED, mask=M_SOUTHEAST_ALPHA), nan=np.inf)
+        southeast_match = (southeast_match < threshold) & (southeast_match == np.min(southeast_match))
+        se_indices = np.argwhere(southeast_match) + [13, 11]
+        if se_indices.any():
+            return se_indices[0]
+        southwest_match = np.nan_to_num(cv2.matchTemplate(img, M_SOUTHWEST_BGR, cv2.TM_SQDIFF_NORMED, mask=M_SOUTHWEST_ALPHA), nan=np.inf)
+        southwest_match = (southwest_match < threshold) & (southwest_match == np.min(southwest_match))
+        sw_indices = np.argwhere(southwest_match) + [13, 11]
+        if sw_indices.any():
+            return sw_indices[0]
+        return [-1, -1]
+    else:            
+        northwest_match = np.nan_to_num(cv2.matchTemplate(img, M_NORTHWEST_BGR, cv2.TM_SQDIFF_NORMED, mask=M_NORTHWEST_ALPHA), nan=np.inf)
+        northeast_match = np.nan_to_num(cv2.matchTemplate(img, M_NORTHEAST_BGR, cv2.TM_SQDIFF_NORMED, mask=M_NORTHEAST_ALPHA), nan=np.inf)
+        southeast_match = np.nan_to_num(cv2.matchTemplate(img, M_SOUTHEAST_BGR, cv2.TM_SQDIFF_NORMED, mask=M_SOUTHEAST_ALPHA), nan=np.inf)
+        southwest_match = np.nan_to_num(cv2.matchTemplate(img, M_SOUTHWEST_BGR, cv2.TM_SQDIFF_NORMED, mask=M_SOUTHWEST_ALPHA), nan=np.inf)
+        northwest_match = (northwest_match < threshold) & (-northwest_match == maximum_filter(-northwest_match, size=5))
+        southwest_match = (southwest_match < threshold) & (-southwest_match == maximum_filter(-southwest_match, size=5))
+        southeast_match = (southeast_match < threshold) & (-southeast_match == maximum_filter(-southeast_match, size=5))
+        northeast_match = (northeast_match < threshold) & (-northeast_match == maximum_filter(-northeast_match, size=5))
+        
+        match = northwest_match + northeast_match + southeast_match + southwest_match
+        monster_indices = np.argwhere(match)
+        print(monster_indices)
+        if monster_indices.any():
+            return monster_indices + [13, 11]
+        else:
+            return [-1,-1]
+    
+def get_character_pos(img, first_found = True):
+
+    """
+    Exactly the same as the monster version. Note: there are 18 classes in the game. I produced templates for only 2 of them (Zobal and Sacrieur)
+    to reduce my screentime.
+    Sacrieur is the best for these kind of BOTs anyways.
+    """
+
     threshold = 55e-3
-    northwest_match = (northwest_match < threshold) & (-northwest_match == maximum_filter(-northwest_match, size=15))
-    southwest_match = (southwest_match < threshold) & (-southwest_match == maximum_filter(-southwest_match, size=15))
-    southeast_match = (southeast_match < threshold) & (-southeast_match == maximum_filter(-southeast_match, size=15))
-    northeast_match = (northeast_match < threshold) & (-northeast_match == maximum_filter(-northeast_match, size=15))
-    match = northwest_match + northeast_match + southeast_match + southwest_match
-    monster_indices = np.argwhere(match)
-    if monster_indices.any():
-        return monster_indices[0] + [13, 11]
-    else:
-        return [-1,-1]
+    if first_found:
+        southwest_match = np.nan_to_num(cv2.matchTemplate(img, C_SOUTHWEST_BGR, cv2.TM_SQDIFF_NORMED, mask=C_SOUTHWEST_ALPHA), nan=np.inf)
+        southwest_match = (southwest_match < threshold) & (southwest_match == np.min(southwest_match))
+        sw_indices = np.argwhere(southwest_match) + [31, 14]
+        if sw_indices.any():
+            return sw_indices[0]
     
-def close_in(img, monster_pos):
-    # with mss.mss() as sct:
-    #     img = sct.grab(sct.monitors[0])
-    # img = np.array(img)
-    # img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-    #img_down = cv2.resize(img, (704, 448), interpolation=cv2.INTER_LINEAR)[:, :, ::-1] / 255
-    img_tensor = torch.tensor(img[:, :, ::-1] / 255, dtype=torch.float32).permute(2, 0, 1).unsqueeze(0).to(device)
-    with torch.no_grad():
-        pred = model(img_tensor)[0, 0].cpu().numpy()
-    mask = (pred > 0.5).astype(np.uint8) * 255
-    mask = cv2.blur(mask, (9, 9))
-    _, mask = cv2.threshold(mask, 250, 255, cv2.THRESH_BINARY)
-    check = img.copy()
-    check[mask == 255] = [255, 0, 0]
-    #cv2.circle(check, (monster_pos[1], monster_pos[0]), 1, (0, 0, 255), -1)
+        northwest_match = np.nan_to_num(cv2.matchTemplate(img, C_NORTHWEST_BGR, cv2.TM_SQDIFF_NORMED, mask=C_NORTHWEST_ALPHA), nan=np.inf)
+        northwest_match = (northwest_match < threshold) & (northwest_match == np.min(northwest_match))
+        nw_indices = np.argwhere(northwest_match) + [29, 12]
+        if nw_indices.any():
+            return nw_indices[0]
 
-    min_dist = float('inf')
-    dest = None
-    for i, ligne in enumerate(mask):
-        for j, pixel in enumerate(ligne):
-            if pixel > 0.5:
-                if abs((monster_pos[0] - i)) + abs(monster_pos[1] - j) / 2 < min_dist:
-                    min_dist = abs(monster_pos[0] - i) + abs(monster_pos[1] - j) / 2
-                    dest = [i, j]
-    if dest:
-        #cv2.circle(check, (dest[1], dest[0]), 1, (0, 255, 0), -1)
-        pyautogui.click(dest[1], dest[0])
+        northeast_match = np.nan_to_num(cv2.matchTemplate(img, C_NORTHEAST_BGR, cv2.TM_SQDIFF_NORMED, mask=C_NORTHEAST_ALPHA), nan=np.inf)
+        northeast_match = (northeast_match < threshold) & (-northeast_match == np.min(northeast_match))
+        ne_indices = np.argwhere(northeast_match) + [29, 12]
+        if ne_indices.any():
+            return ne_indices[0]
+
+        southeast_match = np.nan_to_num(cv2.matchTemplate(img, C_SOUTHEAST_BGR, cv2.TM_SQDIFF_NORMED, mask=C_SOUTHEAST_ALPHA), nan=np.inf)
+        southeast_match = (southeast_match < threshold) & (southeast_match == np.min(southeast_match))
+        se_indices = np.argwhere(southeast_match) + [29, 14]
+        if se_indices.any():
+            return se_indices[0]
     
-    # cv2.imshow("check", check)
-    # cv2.waitKey(0)
-    # cv2.destroyAllWindows()
+        return [-1,-1]
+    else:
+        northwest_match = cv2.matchTemplate(img, C_NORTHWEST_BGR, cv2.TM_SQDIFF_NORMED, mask=C_NORTHWEST_ALPHA)
+        northeast_match = cv2.matchTemplate(img, C_NORTHEAST_BGR, cv2.TM_SQDIFF_NORMED, mask=C_NORTHEAST_ALPHA)
+        southeast_match = cv2.matchTemplate(img, C_SOUTHEAST_BGR, cv2.TM_SQDIFF_NORMED, mask=C_SOUTHEAST_ALPHA)
+        southwest_match = cv2.matchTemplate(img, C_SOUTHWEST_BGR, cv2.TM_SQDIFF_NORMED, mask=C_SOUTHWEST_ALPHA)
+
+        northwest_match = (northwest_match < threshold) & (-northwest_match == maximum_filter(-northwest_match, size=5))
+        southwest_match = (southwest_match < threshold) & (-southwest_match == maximum_filter(-southwest_match, size=5))
+        southeast_match = (southeast_match < threshold) & (-southeast_match == maximum_filter(-southeast_match, size=5))
+        northeast_match = (northeast_match < threshold) & (-northeast_match == maximum_filter(-northeast_match, size=5))
+
+        sw_indices = np.argwhere(southwest_match) + [31, 14]
+        se_indices = np.argwhere(southeast_match) + [29, 14]
+        nw_indices = np.argwhere(northwest_match) + [29, 12]
+        ne_indices = np.argwhere(northeast_match) + [29, 12]
+        character_indices = np.concatenate((sw_indices, se_indices, nw_indices, ne_indices), axis=0)
+        if character_indices.any():
+            return character_indices
+        else:
+            return [-1,-1]
+    
+def get_character_mp():
+
+    """
+    Captures the part of the screen corresponding to the character's movements points and reads it out using text recognition.
+    See the function get_map in bot_script.py for details on the text recognition.
+    """
+
+    mp_img = screenshot_high_res(441, 863, 21, 18)
+    img = cv2.cvtColor(mp_img, cv2.COLOR_BGR2HSV) # Passage en HSV pour ne garder que les pixels peu saturés (gris)
+    # Si un pixel est proche du gris (valeur de saturation S proche de 0), alors on en fait un pixel noir, sinon on en fait un pixel blanc. L'image est donc un texte noir sur blanc fromat BGR
+    for ligne in img:
+        for pixel in ligne:
+            if pixel[1] <= 0 and pixel[2] != 0:
+                pixel[0] = 0
+                pixel[1] = 0
+                pixel[2] = 0
+            else:
+                pixel[0] = 255
+                pixel[1] = 255
+                pixel[2] = 255
+
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    config = r'--psm 7 -c tessedit_char_whitelist=0123456789O'  # Liste de caractères que l'algorithme s'attend à détecter
+    text = pytesseract.image_to_string(img, lang="eng", config=config)
+    text = text.replace("O", "0")
+    match = re.search(r"\d+", text)
+
+    if match:
+        return int(match[0])
+    else:
+        return None
+
+def expand_character(character_pos, monster_pos, mp = 4):
+
+    """
+    Using the character position and his movement points, we determine all the positions the character can move to.
+    Then we put all those position tuples in a pile ordered by incresing distance to the monster, so the closest tile comes out first.
+    The tiles that are further away form the monster than the current position of the character are ignored.
+    At this stage, it is still uknown wether those tiles are indeed available to the character, there could be walls in the way.
+
+    To determine the tiles we can move to, we concatenate i vectors for all i <= mp, all those pointing southwest.
+    All those vectors put together point to a possible tile. 
+    Then, starting from the last vector, we rotate all of them hourly, one by one. This scans across possible tiles. 
+    If we do this four times we get all possible tiles.
+    """
+
+    tiles = []
+    character_pos = vector(character_pos[1], character_pos[0])
+    monster_pos = vector(monster_pos[1], monster_pos[0])
+    for l in range(1, mp+1): # For all l <= mp
+        position_vectors = []
+        for i in range(l):
+            position_vectors.append(vector()) # We concatenate l vectors
+        for i in range(4):
+            for vector1 in position_vectors: # Get the position they point to
+                new_tile = character_pos
+                for vector2 in position_vectors:
+                    new_tile += vector2
+                tiles.append(new_tile)
+                vector1.rotate_hourly() # Then rotate them hourly one by one
+    
+    min_dist = character_pos.dist(monster_pos) - 0.5
+    tiles_hq = []
+    counter = 0
+    for tile in tiles:
+        dist = tile.dist(monster_pos)
+        if dist < min_dist:
+            heapq.heappush(tiles_hq, (dist, counter, tile))
+            counter += 1
+    return tiles_hq
+
+def predict(tile):
+    """
+    We use the model we trained previously to predict wether our character can move to a tile. 
+    The tiles our character is able to move to are highlighted in green by the game.
+    THe model is a minimalist CNN trained for classification with two categories: tile or non tile.
+    I made the training data from 640 tile screenshots.
+    """
+    tile = cv2.cvtColor(tile, cv2.COLOR_BGR2RGB)
+    tile = torch.tensor(tile, dtype=torch.float32).permute(2,0,1) / 255.0
+    tile = tile.unsqueeze(0).to(device)
+    logit = model(tile)
+    return (logit > 0)
+
+def close_in(img, monster_pos, character_pos, fight_corner = [FIGHT_SCN_TOP, FIGHT_SCN_LEFT], mp = 3, square_width = 9):
+    """
+    We expand the character position using expand_character. 
+    Then we pop the possible tiles one by one. 
+    Predict wether the current tile is available and if so, click on it.
+    We return the new distance from our character to the monster.
+
+    """
+    tiles_hq = expand_character(character_pos, monster_pos, mp)
+
+    while tiles_hq:
+        _ , _ , tile = heapq.heappop(tiles_hq)
+        tile_img = img[round(tile.y)-square_width:round(tile.y) + square_width + 1, round(tile.x)-square_width:round(tile.x) + square_width + 1, :]
+        if predict(tile_img):
+            pyautogui.moveTo(tile.x + fight_corner[1], tile.y + fight_corner[0])
+            time.sleep(0.2)
+            pyautogui.click(tile.x + fight_corner[1], tile.y + fight_corner[0])
+            return round(tile.dist(vector(monster_pos[1], monster_pos[0])))
+    character_pos_vect = vector(character_pos[1], character_pos[0])
+    return round(character_pos_vect.dist(vector(monster_pos[1], monster_pos[0])))
 
 def attack(monster_pos):
-    if monster_pos[0] != -1:
-        time.sleep(0.6)
-        pyautogui.click(500, 845)
-        time.sleep(0.7)
-        pyautogui.click(monster_pos[1], monster_pos[0])
-        pyautogui.moveRel(random.randint(100, 200), random.randint(100, 200), 0.2)
 
-def take_action(fight_status):
+    """
+    We attack the monster by clicking our spell, then clicking the monster. 
+    This game is quite simple.
+    """
+
+    if monster_pos[0] != -1:
+        pyautogui.click(SPELL_POS[0], SPELL_POS[1])
+        time.sleep(0.3)
+        pyautogui.click(monster_pos[1], monster_pos[0])
+        pyautogui.moveRel(random.randint(100, 200), random.randint(100, 200), 0.1)
+
+def take_action(fight_status, fight_corner = [FIGHT_SCN_TOP, FIGHT_SCN_LEFT], fight_size = [FIGHT_SCN_WIDTH, FIGHT_SCN_HEIGHT]):
+
+    """"
+    This function puts everything together. 
+    fight_status is the picture of the fighting button. 
+    fight_corner and fight_size define the bounds of the screenshot (the fight doesn't use the whole screen).
+    If we are in preparation mode, we simply click the fight button. 
+    Else if it's out turn, we take a screenshot of the fight scene. 
+    Then get the monster's positon and character's position
+    Using those positions, we close in on the monster, and attack it if it's within range. Them pass our turn.
+    Two attacks can be made, but it's possible the first attack kills the monster. To avoid unwanted clicks, 
+    we check wether the fight is over before attacking again.
+    """
+
     text = get_fighting_text(fight_status)
     grey_text = get_grey_fighting_text(fight_status)
-    if text == FIN and grey_text != FIN:
+    if text == FIN and grey_text != FIN: # Our turn to play
+        # Get the screen shot
         with mss.mss() as sct:
-            img = sct.grab(sct.monitors[0])
+            region = {
+                "top": fight_corner[0],
+                "left": fight_corner[1],
+                "width": fight_size[0],
+                "height": fight_size[1]
+            }
+            img = sct.grab(region)
             img = np.array(img)
             img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-        monster_pos = get_monster_pos(img)
-        print(monster_pos)
-        close_in(img, monster_pos)
-        attack(monster_pos)
-        time.sleep(0.7)
-        attack(monster_pos)
-        pyautogui.click(1070, 842)
-        pyautogui.moveRel(random.randint(100, 200), random.randint(100, 200), 0.2)
-    elif text == CHALLENGES or text == PRET:
-        print("ready to fight")
-        pyautogui.click(1070, 842)
-        pyautogui.moveRel(random.randint(100, 200), random.randint(100, 200), 0.2)
+        # Get the positions
+        monster_pos = get_monster_pos(img, first_found=True)
+        character_pos = get_character_pos(img, first_found=True)
+        # If the monster and character were found, close in on the monster
+        if character_pos[0] != -1 and monster_pos[0] != -1:
+            mp = get_character_mp()
+            distance = close_in(img, monster_pos, character_pos, mp=mp)
+            print("Monster is", distance, "tiles away.")
+            if distance <= SPELL_RANGE: # attack the monster once if in range
+                attack(monster_pos + [fight_corner[0], fight_corner[1]])
+                time.sleep(0.5)
+                if not check_popup(): # if he's not dead, attack again then pass the turn
+                    attack(monster_pos + [fight_corner[0], fight_corner[1]])
+                    pyautogui.click(END_TURN_POS[0], END_TURN_POS[1])
+                    pyautogui.moveRel(random.randint(100, 200), random.randint(100, 200), 0.1)
+            else: # If not in range of the monster after moving, pass the turn
+                pyautogui.click(END_TURN_POS[0], END_TURN_POS[1])
+                pyautogui.moveRel(random.randint(100, 200), random.randint(100, 200), 0.1)
+        else: # Warning in case the template matching didn't work somehow
+            print("Couldn't find a any monster and/or character")
+            pyautogui.click(END_TURN_POS[0], END_TURN_POS[1])
+            pyautogui.moveRel(random.randint(100, 200), random.randint(100, 200), 0.1)
+    elif text == CHALLENGES or text == PRET: # If it's the preparation phase, start the fight
+        pyautogui.click(END_TURN_POS[0], END_TURN_POS[1])
+        pyautogui.moveRel(random.randint(100, 200), random.randint(100, 200), 0.1)
 
 if __name__=="__main__":
 
@@ -270,12 +540,14 @@ if __name__=="__main__":
 
     while True:
         if requested:
-            fight_status = screenshot_high_res(TOP_CORNER[0], TOP_CORNER[1], SIZE[0], SIZE[1])
-            take_action(fight_status)
             # fight_status = screenshot_high_res(TOP_CORNER[0], TOP_CORNER[1], SIZE[0], SIZE[1])
-            # while check_fight(fight_status) and requested:
-            #     take_action(fight_status)
-            #     time.sleep(2)
-            #     fight_status = screenshot_high_res(TOP_CORNER[0], TOP_CORNER[1], SIZE[0], SIZE[1])
+            # take_action(fight_status)
+            fight_status = screenshot_high_res(CORNER_FIGHT_BTN[0], CORNER_FIGHT_BTN[1], SIZE_FIGHT_BTN[0], SIZE_FIGHT_BTN[1])
+            while check_fight(fight_status) and requested:
+                take_action(fight_status)
+                time.sleep(1)
+                fight_status = screenshot_high_res(CORNER_FIGHT_BTN[0], CORNER_FIGHT_BTN[1], SIZE_FIGHT_BTN[0], SIZE_FIGHT_BTN[1])
+            check_popup()
+
             requested = False
         
