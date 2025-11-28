@@ -1,4 +1,3 @@
-import os
 import cv2
 import mss
 import pytesseract
@@ -15,16 +14,25 @@ from torch import nn
 import heapq
 import torch.nn.functional as F
 import re
+import os, sys
 
 device = torch.device("mps" if torch.backends.mps.is_available() else "cpu") # Use the CPU to run the Convolutional Neurol Network
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FIGHT_DIR = os.path.join(BASE_DIR, "resources", "templates", "fight")
+
+def resource_path(relative_path):
+    """Get absolute path to resource, wether we are running the app as a pythion file or as an app made by PyInstaller"""
+    if hasattr(sys, '_MEIPASS'):
+        # PyInstaller’s temporary folder
+        base_path = sys._MEIPASS
+    else:
+        # Normal execution
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, "resources", relative_path)
 
 # Load templates for monster recognition
-M_NORTHEAST = cv2.imread(FIGHT_DIR + "/monster_northeast.png", cv2.IMREAD_UNCHANGED)
-M_NORTHWEST = cv2.imread(FIGHT_DIR + "/monster_northwest.png", cv2.IMREAD_UNCHANGED)
-M_SOUTHEAST = cv2.imread(FIGHT_DIR + "/monster_southeast.png", cv2.IMREAD_UNCHANGED)
-M_SOUTHWEST = cv2.imread(FIGHT_DIR + "/monster_southwest.png", cv2.IMREAD_UNCHANGED)
+M_NORTHEAST = cv2.imread(resource_path("templates/fight/monster_northeast.png"), cv2.IMREAD_UNCHANGED)
+M_NORTHWEST = cv2.imread(resource_path("templates/fight/monster_northwest.png"), cv2.IMREAD_UNCHANGED)
+M_SOUTHEAST = cv2.imread(resource_path("templates/fight/monster_southeast.png"), cv2.IMREAD_UNCHANGED)
+M_SOUTHWEST = cv2.imread(resource_path("templates/fight/monster_southwest.png"), cv2.IMREAD_UNCHANGED)
 M_NORTHEAST_BGR = M_NORTHEAST[:, :, :3]
 M_NORTHEAST_ALPHA = M_NORTHEAST[:, :, 3]
 M_NORTHWEST_BGR = M_NORTHWEST[:, :, :3]
@@ -35,10 +43,10 @@ M_SOUTHWEST_BGR = M_SOUTHWEST[:, :, :3]
 M_SOUTHWEST_ALPHA = M_SOUTHWEST[:, :, 3]
 
 # Load templates for character recognition
-C_NORTHEAST = cv2.imread(FIGHT_DIR + "/sacri_northeast.png", cv2.IMREAD_UNCHANGED)
-C_NORTHWEST = cv2.imread(FIGHT_DIR + "/sacri_northwest.png", cv2.IMREAD_UNCHANGED)
-C_SOUTHEAST = cv2.imread(FIGHT_DIR + "/sacri_southeast.png", cv2.IMREAD_UNCHANGED)
-C_SOUTHWEST = cv2.imread(FIGHT_DIR + "/sacri_southwest.png", cv2.IMREAD_UNCHANGED)
+C_NORTHEAST = cv2.imread(resource_path("templates/fight/sacri_northeast.png"), cv2.IMREAD_UNCHANGED)
+C_NORTHWEST = cv2.imread(resource_path("templates/fight/sacri_northwest.png"), cv2.IMREAD_UNCHANGED)
+C_SOUTHEAST = cv2.imread(resource_path("templates/fight/sacri_southeast.png"), cv2.IMREAD_UNCHANGED)
+C_SOUTHWEST = cv2.imread(resource_path("templates/fight/sacri_southwest.png"), cv2.IMREAD_UNCHANGED)
 C_NORTHEAST_BGR = C_NORTHEAST[:, :, :3]
 C_NORTHEAST_ALPHA = C_NORTHEAST[:, :, 3]
 C_NORTHWEST_BGR = C_NORTHWEST[:, :, :3]
@@ -48,7 +56,32 @@ C_SOUTHEAST_ALPHA = C_SOUTHEAST[:, :, 3]
 C_SOUTHWEST_BGR = C_SOUTHWEST[:, :, :3]
 C_SOUTHWEST_ALPHA = C_SOUTHWEST[:, :, 3]
 
-FIGHT_POPUP_TEMPLATE = cv2.imread(os.path.join(BASE_DIR, "resources", "templates", "fight", "victory_popup.png"), cv2.IMREAD_COLOR)
+
+BLUE_BORDER = cv2.imread(resource_path("templates/fight/blue_border.png"), cv2.IMREAD_UNCHANGED)
+BLUE_BORDER_BGR = BLUE_BORDER[:, :, :3]
+BLUE_BORDER_ALPHA = BLUE_BORDER[:, :, 3]
+
+RED_BORDER = cv2.imread(resource_path("templates/fight/red_border.png"), cv2.IMREAD_UNCHANGED)
+RED_BORDER_BGR = RED_BORDER[:, :, :3]
+RED_BORDER_ALPHA = RED_BORDER[:, :, 3]
+
+BLUE_BORDER_RIGHT = cv2.imread(resource_path("templates/fight/blue_border_right.png"), cv2.IMREAD_UNCHANGED)
+BLUE_BORDER_RIGHT_BGR = BLUE_BORDER_RIGHT[:, :, :3]
+BLUE_BORDER_RIGHT_ALPHA = BLUE_BORDER_RIGHT[:, :, 3]
+
+BLUE_BORDER_LEFT = cv2.imread(resource_path("templates/fight/blue_border_left.png"), cv2.IMREAD_UNCHANGED)
+BLUE_BORDER_LEFT_BGR = BLUE_BORDER_LEFT[:, :, :3]
+BLUE_BORDER_LEFT_ALPHA = BLUE_BORDER_LEFT[:, :, 3]
+
+RED_BORDER_RIGHT = cv2.imread(resource_path("templates/fight/red_border_right.png"), cv2.IMREAD_UNCHANGED)
+RED_BORDER_RIGHT_BGR = RED_BORDER_RIGHT[:, :, :3]
+RED_BORDER_RIGHT_ALPHA = RED_BORDER_RIGHT[:, :, 3]
+
+RED_BORDER_LEFT = cv2.imread(resource_path("templates/fight/red_border_left.png"), cv2.IMREAD_UNCHANGED)
+RED_BORDER_LEFT_BGR = RED_BORDER_LEFT[:, :, :3]
+RED_BORDER_LEFT_ALPHA = RED_BORDER_LEFT[:, :, 3]
+
+FIGHT_POPUP_TEMPLATE = cv2.imread(resource_path("templates/fight/victory_popup.png"), cv2.IMREAD_COLOR)
 CHALLENGES = "CHOISIR LES\nCHALLENGES" # When a fight is preparing, the fight button says "CHOISIR LES CHALLENGS": chose your challenges
 PRET = "PRET" # Then the button says "PRET": ready
 FIN = "FIN DE TOUR" # When it's your turn to play, it says "FIN DE TOUR": end your turn
@@ -94,7 +127,7 @@ class TileClassifier(nn.Module):
         return self.fc2(x)
 
 model = TileClassifier().to(device) # We use the CPU to go faster
-model.load_state_dict(torch.load(os.path.join(BASE_DIR, "tile_cnn.pth"), map_location="cpu")) # We load the weights from a previous training
+model.load_state_dict(torch.load(resource_path("model/tile_cnn.pth"), map_location="cpu")) # We load the weights from a previous training
 model.eval()
 
 ## Define the vector class used to get the tiles surrouding the character
@@ -216,8 +249,8 @@ def check_fight(fight_status):
     """
     We simply read the fight button text to know wether a fight is ongoing or in preparation
     """
-
     text = get_fighting_text(fight_status)
+    print(text)
     grey_text = get_grey_fighting_text(fight_status)
     if text == FIN or text == PRET or text == CHALLENGES or grey_text == FIN:
         return True
@@ -242,7 +275,7 @@ def check_popup():
         return True
     return False
 
-def get_monster_pos(img, first_found=True):
+def get_monster_pos(img):
     """
     This function takes in an image and returns the position of the monsters identified by template matching.
     Returns [-1, -1] if no monsters were found.
@@ -254,48 +287,17 @@ def get_monster_pos(img, first_found=True):
     We only use the first-found=True version of this function for this version of the BOT.
     """
 
-    threshold = 55e-3 # detection threshold
-    if first_found:
-        northwest_match = np.nan_to_num(cv2.matchTemplate(img, M_NORTHWEST_BGR, cv2.TM_SQDIFF_NORMED, mask=M_NORTHWEST_ALPHA), nan=np.inf)
-        northwest_match = (northwest_match < threshold) & (northwest_match == np.min(northwest_match))
-        nw_indices = np.argwhere(northwest_match) + [13, 11] # The match position corresponds to the top left corner. We adjust it to get the center of the monster
-        if nw_indices.any():
-            return nw_indices[0]
-        northeast_match = np.nan_to_num(cv2.matchTemplate(img, M_NORTHEAST_BGR, cv2.TM_SQDIFF_NORMED, mask=M_NORTHEAST_ALPHA), nan=np.inf)
-        northeast_match = (northeast_match < threshold) & (northeast_match == np.min(northeast_match))
-        ne_indices = np.argwhere(northeast_match) + [13, 11]
-        if ne_indices.any():
-            return ne_indices[0]
-        southeast_match = np.nan_to_num(cv2.matchTemplate(img, M_SOUTHEAST_BGR, cv2.TM_SQDIFF_NORMED, mask=M_SOUTHEAST_ALPHA), nan=np.inf)
-        southeast_match = (southeast_match < threshold) & (southeast_match == np.min(southeast_match))
-        se_indices = np.argwhere(southeast_match) + [13, 11]
-        if se_indices.any():
-            return se_indices[0]
-        southwest_match = np.nan_to_num(cv2.matchTemplate(img, M_SOUTHWEST_BGR, cv2.TM_SQDIFF_NORMED, mask=M_SOUTHWEST_ALPHA), nan=np.inf)
-        southwest_match = (southwest_match < threshold) & (southwest_match == np.min(southwest_match))
-        sw_indices = np.argwhere(southwest_match) + [13, 11]
-        if sw_indices.any():
-            return sw_indices[0]
+    border_match = np.nan_to_num(cv2.matchTemplate(img, RED_BORDER_BGR, cv2.TM_SQDIFF, mask=RED_BORDER_ALPHA), nan=np.inf)
+    border_match = (border_match == np.min(border_match))
+
+    pos = np.argwhere(border_match)
+    if pos.any():
+        return pos[0] + [5, 24]
+    else:
         return [-1, -1]
-    else:            
-        northwest_match = np.nan_to_num(cv2.matchTemplate(img, M_NORTHWEST_BGR, cv2.TM_SQDIFF_NORMED, mask=M_NORTHWEST_ALPHA), nan=np.inf)
-        northeast_match = np.nan_to_num(cv2.matchTemplate(img, M_NORTHEAST_BGR, cv2.TM_SQDIFF_NORMED, mask=M_NORTHEAST_ALPHA), nan=np.inf)
-        southeast_match = np.nan_to_num(cv2.matchTemplate(img, M_SOUTHEAST_BGR, cv2.TM_SQDIFF_NORMED, mask=M_SOUTHEAST_ALPHA), nan=np.inf)
-        southwest_match = np.nan_to_num(cv2.matchTemplate(img, M_SOUTHWEST_BGR, cv2.TM_SQDIFF_NORMED, mask=M_SOUTHWEST_ALPHA), nan=np.inf)
-        northwest_match = (northwest_match < threshold) & (-northwest_match == maximum_filter(-northwest_match, size=5))
-        southwest_match = (southwest_match < threshold) & (-southwest_match == maximum_filter(-southwest_match, size=5))
-        southeast_match = (southeast_match < threshold) & (-southeast_match == maximum_filter(-southeast_match, size=5))
-        northeast_match = (northeast_match < threshold) & (-northeast_match == maximum_filter(-northeast_match, size=5))
-        
-        match = northwest_match + northeast_match + southeast_match + southwest_match
-        monster_indices = np.argwhere(match)
-        print(monster_indices)
-        if monster_indices.any():
-            return monster_indices + [13, 11]
-        else:
-            return [-1,-1]
+
     
-def get_character_pos(img, first_found = True):
+def get_character_pos(img):
 
     """
     Exactly the same as the monster version. Note: there are 18 classes in the game. I produced templates for only 2 of them (Zobal and Sacrieur)
@@ -303,53 +305,14 @@ def get_character_pos(img, first_found = True):
     Sacrieur is the best for these kind of BOTs anyways.
     """
 
-    threshold = 55e-3
-    if first_found:
-        southwest_match = np.nan_to_num(cv2.matchTemplate(img, C_SOUTHWEST_BGR, cv2.TM_SQDIFF_NORMED, mask=C_SOUTHWEST_ALPHA), nan=np.inf)
-        southwest_match = (southwest_match < threshold) & (southwest_match == np.min(southwest_match))
-        sw_indices = np.argwhere(southwest_match) + [31, 14]
-        if sw_indices.any():
-            return sw_indices[0]
-    
-        northwest_match = np.nan_to_num(cv2.matchTemplate(img, C_NORTHWEST_BGR, cv2.TM_SQDIFF_NORMED, mask=C_NORTHWEST_ALPHA), nan=np.inf)
-        northwest_match = (northwest_match < threshold) & (northwest_match == np.min(northwest_match))
-        nw_indices = np.argwhere(northwest_match) + [29, 12]
-        if nw_indices.any():
-            return nw_indices[0]
+    border_match = np.nan_to_num(cv2.matchTemplate(img, BLUE_BORDER_BGR, cv2.TM_SQDIFF, mask=BLUE_BORDER_ALPHA), nan=np.inf)
+    border_match = (border_match == np.min(border_match))
 
-        northeast_match = np.nan_to_num(cv2.matchTemplate(img, C_NORTHEAST_BGR, cv2.TM_SQDIFF_NORMED, mask=C_NORTHEAST_ALPHA), nan=np.inf)
-        northeast_match = (northeast_match < threshold) & (-northeast_match == np.min(northeast_match))
-        ne_indices = np.argwhere(northeast_match) + [29, 12]
-        if ne_indices.any():
-            return ne_indices[0]
-
-        southeast_match = np.nan_to_num(cv2.matchTemplate(img, C_SOUTHEAST_BGR, cv2.TM_SQDIFF_NORMED, mask=C_SOUTHEAST_ALPHA), nan=np.inf)
-        southeast_match = (southeast_match < threshold) & (southeast_match == np.min(southeast_match))
-        se_indices = np.argwhere(southeast_match) + [29, 14]
-        if se_indices.any():
-            return se_indices[0]
-    
-        return [-1,-1]
+    pos = np.argwhere(border_match)
+    if pos.any():
+        return pos[0] + [9, 20]
     else:
-        northwest_match = cv2.matchTemplate(img, C_NORTHWEST_BGR, cv2.TM_SQDIFF_NORMED, mask=C_NORTHWEST_ALPHA)
-        northeast_match = cv2.matchTemplate(img, C_NORTHEAST_BGR, cv2.TM_SQDIFF_NORMED, mask=C_NORTHEAST_ALPHA)
-        southeast_match = cv2.matchTemplate(img, C_SOUTHEAST_BGR, cv2.TM_SQDIFF_NORMED, mask=C_SOUTHEAST_ALPHA)
-        southwest_match = cv2.matchTemplate(img, C_SOUTHWEST_BGR, cv2.TM_SQDIFF_NORMED, mask=C_SOUTHWEST_ALPHA)
-
-        northwest_match = (northwest_match < threshold) & (-northwest_match == maximum_filter(-northwest_match, size=5))
-        southwest_match = (southwest_match < threshold) & (-southwest_match == maximum_filter(-southwest_match, size=5))
-        southeast_match = (southeast_match < threshold) & (-southeast_match == maximum_filter(-southeast_match, size=5))
-        northeast_match = (northeast_match < threshold) & (-northeast_match == maximum_filter(-northeast_match, size=5))
-
-        sw_indices = np.argwhere(southwest_match) + [31, 14]
-        se_indices = np.argwhere(southeast_match) + [29, 14]
-        nw_indices = np.argwhere(northwest_match) + [29, 12]
-        ne_indices = np.argwhere(northeast_match) + [29, 12]
-        character_indices = np.concatenate((sw_indices, se_indices, nw_indices, ne_indices), axis=0)
-        if character_indices.any():
-            return character_indices
-        else:
-            return [-1,-1]
+        return [-1, -1]
     
 def get_character_mp():
 
@@ -381,7 +344,7 @@ def get_character_mp():
     if match:
         return int(match[0])
     else:
-        return None
+        return 3
 
 def expand_character(character_pos, monster_pos, mp = 4):
 
@@ -398,25 +361,25 @@ def expand_character(character_pos, monster_pos, mp = 4):
     """
 
     tiles = []
-    character_pos = vector(character_pos[1], character_pos[0])
-    monster_pos = vector(monster_pos[1], monster_pos[0])
+    character_vector = vector(character_pos[1], character_pos[0])
+    monster_vector = vector(monster_pos[1], monster_pos[0])
     for l in range(1, mp+1): # For all l <= mp
         position_vectors = []
         for i in range(l):
             position_vectors.append(vector()) # We concatenate l vectors
         for i in range(4):
             for vector1 in position_vectors: # Get the position they point to
-                new_tile = character_pos
+                new_tile = character_vector
                 for vector2 in position_vectors:
                     new_tile += vector2
                 tiles.append(new_tile)
                 vector1.rotate_hourly() # Then rotate them hourly one by one
     
-    min_dist = character_pos.dist(monster_pos) - 0.5
+    min_dist = round(character_vector.dist(monster_vector)) - 0.2
     tiles_hq = []
     counter = 0
     for tile in tiles:
-        dist = tile.dist(monster_pos)
+        dist = round(tile.dist(monster_vector))
         if dist < min_dist:
             heapq.heappush(tiles_hq, (dist, counter, tile))
             counter += 1
@@ -444,7 +407,6 @@ def close_in(img, monster_pos, character_pos, fight_corner = [FIGHT_SCN_TOP, FIG
 
     """
     tiles_hq = expand_character(character_pos, monster_pos, mp)
-
     while tiles_hq:
         _ , _ , tile = heapq.heappop(tiles_hq)
         tile_img = img[round(tile.y)-square_width:round(tile.y) + square_width + 1, round(tile.x)-square_width:round(tile.x) + square_width + 1, :]
@@ -453,8 +415,9 @@ def close_in(img, monster_pos, character_pos, fight_corner = [FIGHT_SCN_TOP, FIG
             time.sleep(0.2)
             pyautogui.click(tile.x + fight_corner[1], tile.y + fight_corner[0])
             return round(tile.dist(vector(monster_pos[1], monster_pos[0])))
-    character_pos_vect = vector(character_pos[1], character_pos[0])
-    return round(character_pos_vect.dist(vector(monster_pos[1], monster_pos[0])))
+    character_vector = vector(character_pos[1], character_pos[0])
+    monster_vector = vector(monster_pos[1], monster_pos[0])
+    return round(character_vector.dist(monster_vector))
 
 def attack(monster_pos):
 
@@ -464,10 +427,12 @@ def attack(monster_pos):
     """
 
     if monster_pos[0] != -1:
+        pyautogui.moveTo(SPELL_POS[0], SPELL_POS[1], duration=0.1)
         pyautogui.click(SPELL_POS[0], SPELL_POS[1])
-        time.sleep(0.3)
+        time.sleep(0.1)
+        pyautogui.moveTo(monster_pos[1], monster_pos[0], duration=0.1)
         pyautogui.click(monster_pos[1], monster_pos[0])
-        pyautogui.moveRel(random.randint(100, 200), random.randint(100, 200), 0.1)
+        pyautogui.moveRel(random.randint(50, 100), random.randint(50, 100), 0.1)
 
 def take_action(fight_status, fight_corner = [FIGHT_SCN_TOP, FIGHT_SCN_LEFT], fight_size = [FIGHT_SCN_WIDTH, FIGHT_SCN_HEIGHT]):
 
@@ -482,9 +447,9 @@ def take_action(fight_status, fight_corner = [FIGHT_SCN_TOP, FIGHT_SCN_LEFT], fi
     Two attacks can be made, but it's possible the first attack kills the monster. To avoid unwanted clicks, 
     we check wether the fight is over before attacking again.
     """
-
     text = get_fighting_text(fight_status)
     grey_text = get_grey_fighting_text(fight_status)
+    print("taking action:", text)
     if text == FIN and grey_text != FIN: # Our turn to play
         # Get the screen shot
         with mss.mss() as sct:
@@ -498,8 +463,8 @@ def take_action(fight_status, fight_corner = [FIGHT_SCN_TOP, FIGHT_SCN_LEFT], fi
             img = np.array(img)
             img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
         # Get the positions
-        monster_pos = get_monster_pos(img, first_found=True)
-        character_pos = get_character_pos(img, first_found=True)
+        monster_pos = get_monster_pos(img)
+        character_pos = get_character_pos(img)
         # If the monster and character were found, close in on the monster
         if character_pos[0] != -1 and monster_pos[0] != -1:
             mp = get_character_mp()
@@ -507,7 +472,7 @@ def take_action(fight_status, fight_corner = [FIGHT_SCN_TOP, FIGHT_SCN_LEFT], fi
             print("Monster is", distance, "tiles away.")
             if distance <= SPELL_RANGE: # attack the monster once if in range
                 attack(monster_pos + [fight_corner[0], fight_corner[1]])
-                time.sleep(0.5)
+                time.sleep(0.9)
                 if not check_popup(): # if he's not dead, attack again then pass the turn
                     attack(monster_pos + [fight_corner[0], fight_corner[1]])
                     pyautogui.click(END_TURN_POS[0], END_TURN_POS[1])
@@ -542,6 +507,26 @@ if __name__=="__main__":
         if requested:
             # fight_status = screenshot_high_res(TOP_CORNER[0], TOP_CORNER[1], SIZE[0], SIZE[1])
             # take_action(fight_status)
+            # fight_corner = [FIGHT_SCN_TOP, FIGHT_SCN_LEFT]
+            # fight_size = [FIGHT_SCN_WIDTH, FIGHT_SCN_HEIGHT]
+            # with mss.mss() as sct:
+            #     region = {
+            #         "top": fight_corner[0],
+            #         "left": fight_corner[1],
+            #         "width": fight_size[0],
+            #         "height": fight_size[1]
+            #     }
+            #     img = sct.grab(region)
+            #     img = np.array(img)
+            #     img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+            # monster_pos = get_monster_pos(img)
+            # character_pos = get_character_pos(img)
+            # cv2.circle(img, (monster_pos[1], monster_pos[0]), 10, (0, 0, 255), -1)
+            # cv2.circle(img, (character_pos[1], character_pos[0]), 10, (0, 255, 0), -1)    
+            # cv2.imshow("Matches", img)
+            # cv2.waitKey(0)
+            # cv2.destroyAllWindows()
+
             fight_status = screenshot_high_res(CORNER_FIGHT_BTN[0], CORNER_FIGHT_BTN[1], SIZE_FIGHT_BTN[0], SIZE_FIGHT_BTN[1])
             while check_fight(fight_status) and requested:
                 take_action(fight_status)
@@ -551,3 +536,30 @@ if __name__=="__main__":
 
             requested = False
         
+"""
+/ClickBot
+    /.venv
+    /app
+        /main.py
+        /bot_script.py
+        /cbt.py
+        /RouteMaker.py
+        /resources
+            /database
+                resources.db
+            /routes
+                some files
+            /templates
+                /fight
+                    some files
+                /inventory
+                    some files
+                /names
+                    some files
+                /resources
+                    some files
+            /walls
+                some files
+            /model
+                some files
+"""

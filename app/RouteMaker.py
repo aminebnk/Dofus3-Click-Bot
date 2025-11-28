@@ -2,11 +2,10 @@ import tkinter as tk
 from tkinter import font, messagebox, filedialog
 import math
 import os
+from cbt import resource_path
 
 GRID_SIZE = 200
 HALF = GRID_SIZE // 2
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ROUTES_FOLDER = os.path.join(BASE_DIR, "resources", "routes")
 
 class RouteMaker(tk.Toplevel): 
     def __init__(self, master=None):
@@ -228,7 +227,7 @@ class RouteMaker(tk.Toplevel):
             messagebox.showinfo("Enregistrer", "Aucun chemin à enregistrer.")
             return
         parts = [f"({x},{y})" for (x, y) in self.route]
-        filepath = os.path.join(ROUTES_FOLDER, name + ".txt")
+        filepath = resource_path("routes/" + name + ".txt")
         if os.path.exists(filepath):
             confirm = tk.Toplevel(self)
             confirm.title("Ce nom de chemin existe déjà")

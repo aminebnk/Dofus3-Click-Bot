@@ -15,23 +15,22 @@ import ast
 import Quartz.CoreGraphics as CG
 from scipy.ndimage import maximum_filter
 import time
-import os
+import os, sys
 import torch
-from cbt import check_fight, take_action, check_popup, CORNER_FIGHT_BTN, SIZE_FIGHT_BTN  ## cbt is the file that takes care of everything combat-related
+from cbt import check_fight, take_action, check_popup, resource_path, CORNER_FIGHT_BTN, SIZE_FIGHT_BTN  ## cbt is the file that takes care of everything combat-related
 
 device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 
 SCREENSHOT_SIZE = 350  ## Width of the window used to check wether a resource is available
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Bounds for the map coordinates screenshot
 TOP_CORNER_MAP = (3, 104)
 SIZE_MAP = (124, 22)
 
 # Paths and images to check wether the inventory is full or almost full 
-path_full = os.path.join(BASE_DIR, "resources", "templates", "inventory", "Full.png")
-path_almost_full = os.path.join(BASE_DIR, "resources", "templates", "inventory", "Almost_full.png")
-path_not_full = os.path.join(BASE_DIR, "resources", "templates", "inventory", "Not_full.png")
+path_full = resource_path("templates/inventory/Full.png")
+path_almost_full = resource_path("templates/inventory/Almost_full.png")
+path_not_full = resource_path("templates/inventory/Not_full.png")
 template_not_full = cv2.imread(path_not_full, cv2.IMREAD_COLOR)
 template_full = cv2.imread(path_full, cv2.IMREAD_COLOR)
 template_almost_full = cv2.imread(path_almost_full, cv2.IMREAD_COLOR)
@@ -123,12 +122,12 @@ def move(dest):
     count = 10
     while (curr_pos != dest):
         if count > 9:
-            fighting_status = screenshot_high_res(CORNER_FIGHT_BTN[0], CORNER_FIGHT_BTN[1], SIZE_FIGHT_BTN[0], SIZE_FIGHT_BTN[1])
-            while check_fight(fighting_status):
-                take_action(fighting_status)
-                time.sleep(2)
-                check_popup()
-                fighting_status = screenshot_high_res(CORNER_FIGHT_BTN[0], CORNER_FIGHT_BTN[1], SIZE_FIGHT_BTN[0], SIZE_FIGHT_BTN[1])
+            fight_status = screenshot_high_res(CORNER_FIGHT_BTN[0], CORNER_FIGHT_BTN[1], SIZE_FIGHT_BTN[0], SIZE_FIGHT_BTN[1])
+            while check_fight(fight_status):
+                take_action(fight_status)
+                time.sleep(1)
+                fight_status = screenshot_high_res(CORNER_FIGHT_BTN[0], CORNER_FIGHT_BTN[1], SIZE_FIGHT_BTN[0], SIZE_FIGHT_BTN[1])
+            check_popup()
             (move_x, move_y) = (dest[0] - curr_pos[0], dest[1] - curr_pos[1])
             if move_x == 1:
                 go_direction('E')
@@ -194,9 +193,8 @@ def get_map():
     by selecting only pixels with a saturation of 0. Inside buildings the background can be pure black,
     so we need to check for that too, otherwise the text would be black-on-black."""
 
-    frame = screenshot_high_res(TOP_CORNER_MAP[0], TOP_CORNER_MAP[1], SIZE_MAP[0], SIZE_MAP[0]) # Screenshot of map coordinates
+    frame = screenshot_high_res(TOP_CORNER_MAP[0], TOP_CORNER_MAP[1], SIZE_MAP[0], SIZE_MAP[1]) # Screenshot of map coordinates
     img = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV) # Convert to HSV
-
     for ligne in img:
         for pixel in ligne:
             if pixel[1] == 0 and pixel[2] != 0: # If a pixel is grey ( Saturation = 0 ) but not black ( Value = 0 ), we make it black (it's the text)
@@ -220,15 +218,16 @@ def get_map():
     else:
         return None
 
-def get_resources(map_pos, zone="Amakna", types = "All"):
+def get_resources(map_pos, zone="Amakna.txt", types = "All"):
     """
     We connect to the database containing the info on in-game collectable resources. 
     There are zones in the game that make coordinates degenerate, so we need to know for which zone we need the coordinates.
     Takes "All" or a list of strings as types argument, 
     and returns a dictionnary with the name of the resources as keys and a list of positions as values."""
 
-    resource_path = os.path.join(BASE_DIR, "resources", "resources.db")
-    conn = sqlite3.connect(resource_path)
+    zone, _ = os.path.splitext(zone)
+    db_path = resource_path("database/resources.db")
+    conn = sqlite3.connect(db_path)
     c = conn.cursor()
     resources = defaultdict(list) # Dictionary with empty list as default values so we can append the position tuples
     if types == "All":
@@ -248,7 +247,7 @@ def get_route(route_file_name):
     Retrieves a path for the Bot to follow. A simple text file with the successive coordinate tuples separated by semicolons.
     Those files can be written using the RouteMaker inside the main app.
     """
-    route_path = os.path.join(BASE_DIR, "resources", "routes", route_file_name)
+    route_path = resource_path("routes/" + route_file_name)
     with open(route_path, "r") as f:
         content = f.read().strip()
     elements = content.split(";")
@@ -261,7 +260,7 @@ def get_walls(walls_file_name):
     The wall text files are created using the WallMapper app. Unlike the RouteMaker, it is not intended to be used by the user.
     The wall files are named after zone they correspond to.
     """
-    pathname = os.path.join(BASE_DIR, "resources", "walls", walls_file_name)
+    pathname = resource_path("walls/" + walls_file_name)
     with open(pathname, "r") as f:
         content = f.read().strip()
     elements = content.split(";")
@@ -275,7 +274,7 @@ def get_name_pos(name_template_file):
     The user should take a screenshot of the name tag and add it to the templates/names folder using the name
     of the character as file name."""
 
-    template_path = os.path.join(BASE_DIR, "resources", "templates", "names", name_template_file)
+    template_path = resource_path("templates/names/" + name_template_file)
     # Take a screenshot with mss library and convert it to numpy
     with mss.mss() as sct:
         sct_img = sct.grab(sct.monitors[1])
@@ -299,7 +298,7 @@ def check_at(pos, template_file_name):
     returns True if available, else False
     """
 
-    template_path = os.path.join(BASE_DIR, "resources", "templates", "resources", template_file_name)
+    template_path = resource_path("templates/resources/" + template_file_name)
     # Hover over the resource
     mouse = MouseController()
     mouse.position = (pos[0], pos[1])
@@ -314,7 +313,7 @@ def check_at(pos, template_file_name):
     # Template matching on the screenshot
     template = cv2.imread(template_path, cv2.IMREAD_COLOR)
     res = cv2.matchTemplate(img, template, cv2.TM_SQDIFF_NORMED)
-    local_min = (-res == maximum_filter(-res, size=5)) & (res <= 0.2) # Le match n'est pas parfait car mss réagit bizarrement avec retina
+    local_min = (-res == maximum_filter(-res, size=5)) & (res <= 0.3) # Le match n'est pas parfait car mss réagit bizarrement avec retina
     y, x = np.where(local_min)
     points = list(zip(x, y))
 
@@ -387,7 +386,7 @@ def empty_inventory(walls):
     time.sleep(0.03)
     keyboard.release('p')
     
-def run_script(route_name, resource_names, character_name, zone_name="Amakna"):
+def run_script(route_name, resource_names, character_name, zone_name="Amakna.txt"):
     """
     zone_name: name of the zone walls, i.e: "Amakna.txt"
     route_name: name of the path defined created by the user, i.e: "Astrub_forest.txt"
@@ -446,26 +445,26 @@ def run_script(route_name, resource_names, character_name, zone_name="Amakna"):
                             time.sleep(0.1)
                             pyautogui.moveRel(random.randint(100, 200), random.randint(100, 200), 0.2) # Moves the mouse out of the way
                             moving = True # The character gets moving towards the resource. We shall not click on another resource until he is done moving
-                            name_pos = get_name_pos(character_name + ".png") # Get the position of the BOT form its name tag
+                            name_pos = get_name_pos(character_name) # Get the position of the BOT form its name tag
                             time.sleep(1.5) # Give it some time to move
                             while(moving): # While loop to wait until the BOT is stationary. If the name tag doesn't appear on screen (user forgot to turn it on using 'p' or the BOT is in a fight) then the BOT will be considered immobile.
-                                new_name_pos = get_name_pos(character_name + ".png")
+                                new_name_pos = get_name_pos(character_name)
                                 if new_name_pos == name_pos: 
                                     moving = False
                                     time.sleep(1.5)
                                 else: 
                                     name_pos = new_name_pos
                                     time.sleep(1.5)
-                            fighting_status = screenshot_high_res(CORNER_FIGHT_BTN[0], CORNER_FIGHT_BTN[1], SIZE_FIGHT_BTN[0], SIZE_FIGHT_BTN[1]) # Check wether the BOT got in a fight. If in a fight, True, else False
-                            while check_fight(fighting_status): # If the BOT is in a fight, we take care of the fight until it is over
-                                take_action(fighting_status) # Where the action happens. See cbt.py
+                            fight_status = screenshot_high_res(CORNER_FIGHT_BTN[0], CORNER_FIGHT_BTN[1], SIZE_FIGHT_BTN[0], SIZE_FIGHT_BTN[1])
+                            while check_fight(fight_status):
+                                take_action(fight_status)
                                 time.sleep(1)
-                                check_popup() # Closes the victory popup if need be
-                                fighting_status = screenshot_high_res(CORNER_FIGHT_BTN[0], CORNER_FIGHT_BTN[1], SIZE_FIGHT_BTN[0], SIZE_FIGHT_BTN[1]) # Updates the fight status
+                                fight_status = screenshot_high_res(CORNER_FIGHT_BTN[0], CORNER_FIGHT_BTN[1], SIZE_FIGHT_BTN[0], SIZE_FIGHT_BTN[1])
+                            check_popup()
         
         
 if __name__=="__main__":
-    run_script("Amakna.txt", "Forêt d'Astrub 2.txt", ["Frêne", "Châtaigner"], "Brigitte-Fardeau", "Amakna")
+    run_script("Forêt d'Astrub 2.txt", ["Frêne", "Châtaigner"], "Brigitte-Fardeau.png", "Amakna.txt")
 
     # # # # # # # # # # # # # # # # # # # # # # # 
     # Just some code to test specific functions #
@@ -485,10 +484,5 @@ if __name__=="__main__":
     # requested = False
     # while True:
     #     if requested:
-            #print(check_popup())
-            # with mss.mss() as sct:
-            #     img = sct.grab(sct.monitors[0])
-            #     img = np.array(img)
-            #     img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-            # get_monster_pos(img)
-            # requested = False
+    #         print(get_map())
+    #         requested = False
