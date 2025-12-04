@@ -15,8 +15,9 @@ import ast
 import Quartz.CoreGraphics as CG
 from scipy.ndimage import maximum_filter
 import time
-import os, sys
+import os
 import torch
+
 from cbt import check_fight, take_action, check_popup, resource_path, CORNER_FIGHT_BTN, SIZE_FIGHT_BTN  ## cbt is the file that takes care of everything combat-related
 
 device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
@@ -34,7 +35,6 @@ path_not_full = resource_path("templates/inventory/Not_full.png")
 template_not_full = cv2.imread(path_not_full, cv2.IMREAD_COLOR)
 template_full = cv2.imread(path_full, cv2.IMREAD_COLOR)
 template_almost_full = cv2.imread(path_almost_full, cv2.IMREAD_COLOR)
-
 
 ## General function definitions
 
@@ -110,41 +110,83 @@ def astar(start, end, walls = []):
 
     return None
 
-def move(dest):
+# def move(dest, terminate=False):
+#     """
+#     This is just a while loop to go from one map to another using the keyboard.
+#     Sometimes the character is busy or some other thing goes wrong so we need a while loop
+#     to ensure the move is made. This is only used to move the character from adjacent maps."""
+#     curr_pos = get_map()
+#     while curr_pos == None:
+#         if terminate:
+#             return 
+#         time.sleep(0.1)
+#         curr_pos = get_map()
+#     count = 10
+#     while (curr_pos != dest):
+#         if count > 9:
+#             fight_status = screenshot_high_res(CORNER_FIGHT_BTN[0], CORNER_FIGHT_BTN[1], SIZE_FIGHT_BTN[0], SIZE_FIGHT_BTN[1])
+#             while check_fight(fight_status):
+#                 take_action(fight_status)
+#                 time.sleep(0.4)
+#                 fight_status = screenshot_high_res(CORNER_FIGHT_BTN[0], CORNER_FIGHT_BTN[1], SIZE_FIGHT_BTN[0], SIZE_FIGHT_BTN[1])
+#             check_popup()
+#             (move_x, move_y) = (dest[0] - curr_pos[0], dest[1] - curr_pos[1])
+#             if move_x == 1:
+#                 go_direction('E')
+#             elif move_x == -1:
+#                 go_direction('O')
+#             elif move_y == 1:
+#                 go_direction('S')
+#             elif move_y == -1:
+#                 go_direction('N')
+#             count = 0
+#         else:
+#             time.sleep(0.4)
+#             count += 1
+#         curr_pos = get_map()
+#         while not curr_pos:
+#             curr_pos = get_map()
+#             time.sleep(0.1)
+
+def move(dest, terminate=False):
     """
     This is just a while loop to go from one map to another using the keyboard.
     Sometimes the character is busy or some other thing goes wrong so we need a while loop
     to ensure the move is made. This is only used to move the character from adjacent maps."""
+    fight_status = screenshot_high_res(CORNER_FIGHT_BTN[0], CORNER_FIGHT_BTN[1], SIZE_FIGHT_BTN[0], SIZE_FIGHT_BTN[1])
+    while check_fight(fight_status):
+        take_action(fight_status)
+        time.sleep(0.4)
+        fight_status = screenshot_high_res(CORNER_FIGHT_BTN[0], CORNER_FIGHT_BTN[1], SIZE_FIGHT_BTN[0], SIZE_FIGHT_BTN[1])
+    check_popup()
     curr_pos = get_map()
-    while curr_pos == None:
-        time.sleep(0.1)
-        curr_pos = get_map()
-    count = 10
-    while (curr_pos != dest):
-        if count > 9:
-            fight_status = screenshot_high_res(CORNER_FIGHT_BTN[0], CORNER_FIGHT_BTN[1], SIZE_FIGHT_BTN[0], SIZE_FIGHT_BTN[1])
-            while check_fight(fight_status):
-                take_action(fight_status)
-                time.sleep(1)
-                fight_status = screenshot_high_res(CORNER_FIGHT_BTN[0], CORNER_FIGHT_BTN[1], SIZE_FIGHT_BTN[0], SIZE_FIGHT_BTN[1])
-            check_popup()
-            (move_x, move_y) = (dest[0] - curr_pos[0], dest[1] - curr_pos[1])
-            if move_x == 1:
-                go_direction('E')
-            elif move_x == -1:
-                go_direction('O')
-            elif move_y == 1:
-                go_direction('S')
-            elif move_y == -1:
-                go_direction('N')
-            count = 0
+    if curr_pos == None:
+        time.sleep(0.4)
+        if not terminate:
+            move(dest)
         else:
-            time.sleep(0.4)
-            count += 1
-        curr_pos = get_map()
-        while not curr_pos:
+            return
+    (move_x, move_y) = (dest[0] - curr_pos[0], dest[1] - curr_pos[1])
+    if move_x > 0:
+        go_direction('E')
+    elif move_x < 0:
+        go_direction('O')
+    elif move_y > 0:
+        go_direction('S')
+    elif move_y < 0:
+        go_direction('N')
+    time.sleep(0.5)
+    count = 7
+    while curr_pos != dest:
+        if count == 0:
+            break
+        else:
+            time.sleep(0.5)
+            count -= 1
             curr_pos = get_map()
-            time.sleep(0.1)
+    
+    if curr_pos != dest:
+        move(dest)
 
 def go_direction(direction):
     """
@@ -174,17 +216,20 @@ def go_direction(direction):
             time.sleep(0.03)
             keyboard.release('w')
 
-def go_to(destination, walls = []):
+def go_to(destination, terminate=False, walls = []):
     """
     Simply calls the A-star algorithm to figure out the path and executes the moves one-by-one."""
     start = get_map()
     while start == None:
+        if terminate:
+            return 
+        time.sleep(0.1)
         start = get_map()
     end = destination
     path = astar(start, end, walls)
     l = len(path)
     for i in range(l-1):
-        move(path[-i-2])
+        move(path[-i-2], terminate)
 
 def get_map():
     """
@@ -273,7 +318,7 @@ def get_name_pos(name_template_file):
     Not necessary but improves the bot operation by detecting its movements.
     The user should take a screenshot of the name tag and add it to the templates/names folder using the name
     of the character as file name."""
-
+    
     template_path = resource_path("templates/names/" + name_template_file)
     # Take a screenshot with mss library and convert it to numpy
     with mss.mss() as sct:
@@ -424,16 +469,16 @@ def run_script(route_name, resource_names, character_name, zone_name="Amakna.txt
 
     walls = get_walls(zone_name)
     path = get_route(route_name)
-    while True:
-        time.sleep(1)
-        while run:
+    while not terminate:
+        time.sleep(0.1)
+        if run:
             for destination in path: # Goes along the path one map after the other
                 bank_count += 1
                 if bank_count == 5:
                     bank_count = 0
                     if inventory_full():
                         empty_inventory(walls)
-                go_to(destination, walls)
+                go_to(destination, terminate, walls)
                 if terminate:
                     break
                 resources = get_resources(destination, zone_name, resource_names) # retrieve the positions of the resources to collect for the current map
@@ -451,14 +496,14 @@ def run_script(route_name, resource_names, character_name, zone_name="Amakna.txt
                                 new_name_pos = get_name_pos(character_name)
                                 if new_name_pos == name_pos: 
                                     moving = False
-                                    time.sleep(1.5)
+                                    time.sleep(0.5)
                                 else: 
                                     name_pos = new_name_pos
-                                    time.sleep(1.5)
+                                    time.sleep(0.5)
                             fight_status = screenshot_high_res(CORNER_FIGHT_BTN[0], CORNER_FIGHT_BTN[1], SIZE_FIGHT_BTN[0], SIZE_FIGHT_BTN[1])
                             while check_fight(fight_status):
                                 take_action(fight_status)
-                                time.sleep(1)
+                                time.sleep(0.4)
                                 fight_status = screenshot_high_res(CORNER_FIGHT_BTN[0], CORNER_FIGHT_BTN[1], SIZE_FIGHT_BTN[0], SIZE_FIGHT_BTN[1])
                             check_popup()
         

@@ -28,34 +28,6 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
     return os.path.join(base_path, "resources", relative_path)
 
-# Load templates for monster recognition
-M_NORTHEAST = cv2.imread(resource_path("templates/fight/monster_northeast.png"), cv2.IMREAD_UNCHANGED)
-M_NORTHWEST = cv2.imread(resource_path("templates/fight/monster_northwest.png"), cv2.IMREAD_UNCHANGED)
-M_SOUTHEAST = cv2.imread(resource_path("templates/fight/monster_southeast.png"), cv2.IMREAD_UNCHANGED)
-M_SOUTHWEST = cv2.imread(resource_path("templates/fight/monster_southwest.png"), cv2.IMREAD_UNCHANGED)
-M_NORTHEAST_BGR = M_NORTHEAST[:, :, :3]
-M_NORTHEAST_ALPHA = M_NORTHEAST[:, :, 3]
-M_NORTHWEST_BGR = M_NORTHWEST[:, :, :3]
-M_NORTHWEST_ALPHA = M_NORTHWEST[:, :, 3]
-M_SOUTHEAST_BGR = M_SOUTHEAST[:, :, :3]
-M_SOUTHEAST_ALPHA = M_SOUTHEAST[:, :, 3]
-M_SOUTHWEST_BGR = M_SOUTHWEST[:, :, :3]
-M_SOUTHWEST_ALPHA = M_SOUTHWEST[:, :, 3]
-
-# Load templates for character recognition
-C_NORTHEAST = cv2.imread(resource_path("templates/fight/sacri_northeast.png"), cv2.IMREAD_UNCHANGED)
-C_NORTHWEST = cv2.imread(resource_path("templates/fight/sacri_northwest.png"), cv2.IMREAD_UNCHANGED)
-C_SOUTHEAST = cv2.imread(resource_path("templates/fight/sacri_southeast.png"), cv2.IMREAD_UNCHANGED)
-C_SOUTHWEST = cv2.imread(resource_path("templates/fight/sacri_southwest.png"), cv2.IMREAD_UNCHANGED)
-C_NORTHEAST_BGR = C_NORTHEAST[:, :, :3]
-C_NORTHEAST_ALPHA = C_NORTHEAST[:, :, 3]
-C_NORTHWEST_BGR = C_NORTHWEST[:, :, :3]
-C_NORTHWEST_ALPHA = C_NORTHWEST[:, :, 3]
-C_SOUTHEAST_BGR = C_SOUTHEAST[:, :, :3]
-C_SOUTHEAST_ALPHA = C_SOUTHEAST[:, :, 3]
-C_SOUTHWEST_BGR = C_SOUTHWEST[:, :, :3]
-C_SOUTHWEST_ALPHA = C_SOUTHWEST[:, :, 3]
-
 
 BLUE_BORDER = cv2.imread(resource_path("templates/fight/blue_border.png"), cv2.IMREAD_UNCHANGED)
 BLUE_BORDER_BGR = BLUE_BORDER[:, :, :3]
@@ -64,22 +36,6 @@ BLUE_BORDER_ALPHA = BLUE_BORDER[:, :, 3]
 RED_BORDER = cv2.imread(resource_path("templates/fight/red_border.png"), cv2.IMREAD_UNCHANGED)
 RED_BORDER_BGR = RED_BORDER[:, :, :3]
 RED_BORDER_ALPHA = RED_BORDER[:, :, 3]
-
-BLUE_BORDER_RIGHT = cv2.imread(resource_path("templates/fight/blue_border_right.png"), cv2.IMREAD_UNCHANGED)
-BLUE_BORDER_RIGHT_BGR = BLUE_BORDER_RIGHT[:, :, :3]
-BLUE_BORDER_RIGHT_ALPHA = BLUE_BORDER_RIGHT[:, :, 3]
-
-BLUE_BORDER_LEFT = cv2.imread(resource_path("templates/fight/blue_border_left.png"), cv2.IMREAD_UNCHANGED)
-BLUE_BORDER_LEFT_BGR = BLUE_BORDER_LEFT[:, :, :3]
-BLUE_BORDER_LEFT_ALPHA = BLUE_BORDER_LEFT[:, :, 3]
-
-RED_BORDER_RIGHT = cv2.imread(resource_path("templates/fight/red_border_right.png"), cv2.IMREAD_UNCHANGED)
-RED_BORDER_RIGHT_BGR = RED_BORDER_RIGHT[:, :, :3]
-RED_BORDER_RIGHT_ALPHA = RED_BORDER_RIGHT[:, :, 3]
-
-RED_BORDER_LEFT = cv2.imread(resource_path("templates/fight/red_border_left.png"), cv2.IMREAD_UNCHANGED)
-RED_BORDER_LEFT_BGR = RED_BORDER_LEFT[:, :, :3]
-RED_BORDER_LEFT_ALPHA = RED_BORDER_LEFT[:, :, 3]
 
 FIGHT_POPUP_TEMPLATE = cv2.imread(resource_path("templates/fight/victory_popup.png"), cv2.IMREAD_COLOR)
 CHALLENGES = "CHOISIR LES\nCHALLENGES" # When a fight is preparing, the fight button says "CHOISIR LES CHALLENGS": chose your challenges
@@ -214,7 +170,7 @@ def get_fighting_text(img):
     img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     img = cv2.GaussianBlur(img, (3,3), 0.6)
 
-    text = pytesseract.image_to_string(img, lang="fra") # Je suis français donc le jeu est en francais mdr
+    text = pytesseract.image_to_string(img, lang="fra")
     return text.strip()
 
 def get_grey_fighting_text(img):
@@ -243,14 +199,13 @@ def get_grey_fighting_text(img):
     img = cv2.GaussianBlur(img, (3,3), 0.6)
 
     text = pytesseract.image_to_string(img, lang="fra")
-    return text
+    return text.strip()
 
 def check_fight(fight_status):
     """
     We simply read the fight button text to know wether a fight is ongoing or in preparation
     """
     text = get_fighting_text(fight_status)
-    print(text)
     grey_text = get_grey_fighting_text(fight_status)
     if text == FIN or text == PRET or text == CHALLENGES or grey_text == FIN:
         return True
@@ -272,6 +227,10 @@ def check_popup():
         keyboard.press(Key.esc)
         time.sleep(0.03)
         keyboard.release(Key.esc)
+        time.sleep(0.1)
+        keyboard.press('p')
+        time.sleep(0.03)
+        keyboard.release('p')
         return True
     return False
 
@@ -448,9 +407,7 @@ def take_action(fight_status, fight_corner = [FIGHT_SCN_TOP, FIGHT_SCN_LEFT], fi
     we check wether the fight is over before attacking again.
     """
     text = get_fighting_text(fight_status)
-    grey_text = get_grey_fighting_text(fight_status)
-    print("taking action:", text)
-    if text == FIN and grey_text != FIN: # Our turn to play
+    if text == FIN: # Our turn to play
         # Get the screen shot
         with mss.mss() as sct:
             region = {
@@ -469,7 +426,6 @@ def take_action(fight_status, fight_corner = [FIGHT_SCN_TOP, FIGHT_SCN_LEFT], fi
         if character_pos[0] != -1 and monster_pos[0] != -1:
             mp = get_character_mp()
             distance = close_in(img, monster_pos, character_pos, mp=mp)
-            print("Monster is", distance, "tiles away.")
             if distance <= SPELL_RANGE: # attack the monster once if in range
                 attack(monster_pos + [fight_corner[0], fight_corner[1]])
                 time.sleep(0.9)
@@ -481,7 +437,6 @@ def take_action(fight_status, fight_corner = [FIGHT_SCN_TOP, FIGHT_SCN_LEFT], fi
                 pyautogui.click(END_TURN_POS[0], END_TURN_POS[1])
                 pyautogui.moveRel(random.randint(100, 200), random.randint(100, 200), 0.1)
         else: # Warning in case the template matching didn't work somehow
-            print("Couldn't find a any monster and/or character")
             pyautogui.click(END_TURN_POS[0], END_TURN_POS[1])
             pyautogui.moveRel(random.randint(100, 200), random.randint(100, 200), 0.1)
     elif text == CHALLENGES or text == PRET: # If it's the preparation phase, start the fight
@@ -537,29 +492,30 @@ if __name__=="__main__":
             requested = False
         
 """
-/ClickBot
-    /.venv
-    /app
-        /main.py
-        /bot_script.py
-        /cbt.py
-        /RouteMaker.py
-        /resources
-            /database
+ClickBot/
+    app/
+        main.py
+        clickbot.py
+        bot_script.py
+        cbt.py
+        routemaker.py
+        screenselector.py
+        resources/
+            database/
                 resources.db
-            /routes
+            routes/
                 some files
-            /templates
-                /fight
+            templates/
+                fight/
                     some files
-                /inventory
+                inventory/
                     some files
-                /names
+                names/
                     some files
-                /resources
+                resources/
                     some files
-            /walls
+            walls/
                 some files
-            /model
+            model/
                 some files
 """
