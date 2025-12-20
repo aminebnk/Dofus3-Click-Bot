@@ -6,6 +6,8 @@ import cv2
 import numpy as np
 import os
 
+
+""" This file takes care of the name tag registering process. Creates a sub app that takes a screenshot of the user entry zone and cuts out the nametag automatically so it can be used by the main loop. """
 SAVE_FOLDER = resource_path("templates/names")
 
 class ScreenSelector(tk.Toplevel):

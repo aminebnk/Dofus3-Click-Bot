@@ -6,6 +6,7 @@ import os
 import multiprocessing as mp
 import screenselector
 
+""" This file is the main app layout. """
 
 class ClickBot:
     def __init__(self, root):

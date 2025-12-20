@@ -16,6 +16,10 @@ import torch.nn.functional as F
 import re
 import os, sys
 
+
+""" This file contains all fight-related functionalities of the bot. """
+
+
 device = torch.device("mps" if torch.backends.mps.is_available() else "cpu") # Use the CPU to run the Convolutional Neurol Network
 
 def resource_path(relative_path):
@@ -305,7 +309,7 @@ def get_character_mp():
     else:
         return 3
 
-def expand_character(character_pos, monster_pos, mp = 4):
+def expand_character(character_pos, monster_pos, mp = 3):
 
     """
     Using the character position and his movement points, we determine all the positions the character can move to.
@@ -333,7 +337,7 @@ def expand_character(character_pos, monster_pos, mp = 4):
                     new_tile += vector2
                 tiles.append(new_tile)
                 vector1.rotate_hourly() # Then rotate them hourly one by one
-    
+
     min_dist = round(character_vector.dist(monster_vector)) - 0.2
     tiles_hq = []
     counter = 0
@@ -443,23 +447,25 @@ def take_action(fight_status, fight_corner = [FIGHT_SCN_TOP, FIGHT_SCN_LEFT], fi
         pyautogui.click(END_TURN_POS[0], END_TURN_POS[1])
         pyautogui.moveRel(random.randint(100, 200), random.randint(100, 200), 0.1)
 
-if __name__=="__main__":
+#if __name__=="__main__":
+    # img = cv2.imread("/Users/louisetien/Desktop/screenshot.png")
+    # monster_pos = get_monster_pos(img)
+    # character_pos = get_character_pos(img)
+    # def on_press(key):
+    #     global requested
+    #     if key == keyboard.KeyCode.from_char('n'):
+    #         if requested:
+    #             requested = False
+    #         else:
+    #             requested = True
 
-    def on_press(key):
-        global requested
-        if key == keyboard.KeyCode.from_char('n'):
-            if requested:
-                requested = False
-            else:
-                requested = True
+    # listener = keyboard.Listener(on_press = on_press)
+    # listener.start()
 
-    listener = keyboard.Listener(on_press = on_press)
-    listener.start()
+    # requested = False
 
-    requested = False
-
-    while True:
-        if requested:
+    # while True:
+    #     if requested:
             # fight_status = screenshot_high_res(TOP_CORNER[0], TOP_CORNER[1], SIZE[0], SIZE[1])
             # take_action(fight_status)
             # fight_corner = [FIGHT_SCN_TOP, FIGHT_SCN_LEFT]
@@ -481,15 +487,6 @@ if __name__=="__main__":
             # cv2.imshow("Matches", img)
             # cv2.waitKey(0)
             # cv2.destroyAllWindows()
-
-            fight_status = screenshot_high_res(CORNER_FIGHT_BTN[0], CORNER_FIGHT_BTN[1], SIZE_FIGHT_BTN[0], SIZE_FIGHT_BTN[1])
-            while check_fight(fight_status) and requested:
-                take_action(fight_status)
-                time.sleep(1)
-                fight_status = screenshot_high_res(CORNER_FIGHT_BTN[0], CORNER_FIGHT_BTN[1], SIZE_FIGHT_BTN[0], SIZE_FIGHT_BTN[1])
-            check_popup()
-
-            requested = False
         
 """
 ClickBot/

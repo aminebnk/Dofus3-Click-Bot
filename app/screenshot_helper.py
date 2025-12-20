@@ -3,6 +3,8 @@ import mss
 import numpy as np
 import cv2
 
+
+""" Development tool used to get screenshot with mss flawed quality to create templates. """
 def on_press(key):
     global requested
     if key == keyboard.KeyCode.from_char('n'):

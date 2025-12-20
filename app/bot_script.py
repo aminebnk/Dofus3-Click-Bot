@@ -17,8 +17,11 @@ from scipy.ndimage import maximum_filter
 import time
 import os
 import torch
-
 from cbt import check_fight, take_action, check_popup, resource_path, CORNER_FIGHT_BTN, SIZE_FIGHT_BTN  ## cbt is the file that takes care of everything combat-related
+
+
+""" This file contains the main script loop and related functions. This is the bulk of the back end together with cbt.py """
+
 
 device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 
