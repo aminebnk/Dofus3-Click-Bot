@@ -1,6 +1,6 @@
 # DOFUS 3 CLICKBOT WITH PYTHON
-#### Video demo: <URL HERE>
-#### Description:
+#### Video demo: https://youtu.be/MaXxQw0qS7I
+#### Description: Click Bot for the video game Dofus 3 as a tkinter app that works for mac OS. Gathers resources and fights monsters automatically
 
 ## Context
 
