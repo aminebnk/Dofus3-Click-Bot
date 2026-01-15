@@ -453,13 +453,19 @@ def run_script(route_name, resource_names, character_name, zone_name="Amakna.txt
     def on_press(key):
         nonlocal run
         nonlocal terminate
-        if key == keyboard.KeyCode.from_char('n'):
-            if not run:
-                run = True
-            else:
-                run = False
-        elif key == keyboard.KeyCode.from_char('z'):
-            terminate = True
+        try:
+            if hasattr(key, 'char') and key.char == 'n':
+                if not run:
+                    print("Bot started")
+                    run = True
+                else:
+                    print("Bot paused")
+                    run = False
+            elif hasattr(key, 'char') and key.char == 'z':
+                print("Bot terminated")
+                terminate = True
+        except Exception as e:
+            print(f"Error handling key press: {e}")
 
     listener = keyboard.Listener(on_press = on_press)
     listener.start()
@@ -467,9 +473,11 @@ def run_script(route_name, resource_names, character_name, zone_name="Amakna.txt
 
     walls = get_walls(zone_name)
     path = get_route(route_name)
+    print("Script ready. Press 'n' to start/pause, 'z' to stop.")
     while not terminate:
         time.sleep(0.1)
         if run:
+            print("Running...")
             for destination in path: # Goes along the path one map after the other
                 bank_count += 1
                 if bank_count == 5:

@@ -73,12 +73,13 @@ class ScreenSelector(tk.Toplevel):
             return
 
         # Close overlay
-        self.destroy()
+        self.withdraw()
         self.master.update()
 
         # Capture region
         self.capture_region(x1, y1, w, h)
 
+        self.destroy()
         self.master.deiconify()
 
     def cancel(self, event=None):
