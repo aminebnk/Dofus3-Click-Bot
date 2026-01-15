@@ -165,4 +165,86 @@ class ScreenSelector(tk.Toplevel):
 def run(master):
     return ScreenSelector(master)
 
-    
+
+class RegionSelector(tk.Toplevel):
+    def __init__(self, master, callback):
+        super().__init__(master)
+        self.master = master
+        self.callback = callback
+
+        # Hide main window
+        master.withdraw()
+
+        self.overrideredirect(True)
+        # Get main screen size
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+
+        # Maximize window manually
+        self.geometry(f"{screen_w}x{screen_h}+0+0")
+        self.lift()
+        self.attributes("-topmost", True)
+        self.attributes('-alpha', 0.2)
+        self.configure(bg='black')
+
+        self.canvas = tk.Canvas(self, bg="black", highlightthickness=0)
+        self.canvas.pack(fill="both", expand=True)
+
+        self.start_x = self.start_y = None
+        self.rect_id = None
+
+        self.bind("<ButtonPress-1>", self.on_press)
+        self.bind("<B1-Motion>", self.on_drag)
+        self.bind("<ButtonRelease-1>", self.on_release)
+        self.bind("<Escape>", self.cancel)
+
+    def on_press(self, event):
+        self.start_x, self.start_y = event.x, event.y
+        if self.rect_id:
+            self.canvas.delete(self.rect_id)
+
+        self.rect_id = self.canvas.create_rectangle(
+            self.start_x, self.start_y, self.start_x, self.start_y,
+            outline="red", width=2
+        )
+
+    def on_drag(self, event):
+        if self.rect_id:
+            self.canvas.coords(self.rect_id, self.start_x, self.start_y, event.x, event.y)
+
+    def on_release(self, event):
+        if not self.rect_id:
+            return
+
+        # Normalize coords
+        x1, y1, x2, y2 = self.canvas.coords(self.rect_id)
+        x1, x2 = sorted([int(x1), int(x2)])
+        y1, y2 = sorted([int(y1), int(y2)])
+
+        w = x2 - x1
+        h = y2 - y1
+
+        if w < 3 or h < 3:
+            messagebox.showerror("Error", "Selection too small.")
+            self.cancel()
+            return
+
+        # Close overlay but keep instance alive for callback
+        self.withdraw()
+        self.master.update()
+
+        # Use simple coordinate mapping assuming full screen overlay
+        # Note: If mss is used later with these coords, they might need scaling on Retina.
+        # But here we just return what the user selected on the canvas.
+        if self.callback:
+            self.callback(x1, y1, w, h)
+
+        self.destroy()
+        self.master.deiconify()
+
+    def cancel(self, event=None):
+        self.destroy()
+        self.master.deiconify()
+
+def select_region(master, callback):
+    return RegionSelector(master, callback)
