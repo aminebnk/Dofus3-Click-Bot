@@ -1,7 +1,6 @@
 import cv2
 import mss
 import pytesseract
-import Quartz.CoreGraphics as CG
 import numpy as np
 from pynput import keyboard
 from pynput.keyboard import Key, Controller as KeyboardController
@@ -118,38 +117,16 @@ class vector:
 
 def screenshot_high_res(x, y, w, h):
     """
-    Takes a high-definition screenshot using Core Graphics and converts it to numpy (BGR).
+    Takes a high-definition screenshot using mss and converts it to numpy (BGR).
     x, y = coordinates of the top-left corner
     w, h = width and height of the zone
-
-    Note: This is slower than the mss library but has better definition. Used for small areas where text recognition is needed.
     """
-    display_id = CG.CGMainDisplayID()
-
-    # Screenshot rectangle
-    rect = CG.CGRectMake(x, y, w, h)
-
-    # Capture
-    image = CG.CGDisplayCreateImageForRect(display_id, rect)
-
-    width = CG.CGImageGetWidth(image)
-    height = CG.CGImageGetHeight(image)
-    bytes_per_row = CG.CGImageGetBytesPerRow(image)
-
-    provider = CG.CGImageGetDataProvider(image)
-    data = CG.CGDataProviderCopyData(provider)
-
-    buf = np.frombuffer(data, dtype=np.uint8)
-    arr = np.ndarray(
-        shape=(height, bytes_per_row),
-        dtype=np.uint8,
-        buffer=buf
-    )
-
-    arr = arr[:, :width*4]  # Taking a screenshot adds balck borders for some reason. We only keep the useful part of the image.
-    arr = arr.reshape((height, width, 4))  # And reshape it
-    img = cv2.cvtColor(arr, cv2.COLOR_BGRA2BGR)  # And convert it to BGR, which is what cv2 works with by default
-    return img
+    with mss.mss() as sct:
+        monitor = {"top": int(y), "left": int(x), "width": int(w), "height": int(h)}
+        img = sct.grab(monitor)
+        img = np.array(img)
+        img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+        return img
 
 def get_fighting_text(img):
 
