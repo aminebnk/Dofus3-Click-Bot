@@ -105,21 +105,52 @@ class ScreenSelector(tk.Toplevel):
                     if j > max_x:
                         max_x = j
         
-        min_x = round(min_x * 0.5)
-        min_y = round(min_y * 0.5)
-        max_x = round(max_x * 0.5)
-        max_y = round(max_y * 0.5)
+        if min_x > max_x or min_y > max_y:
+            messagebox.showerror("Error", "Could not find nametag in the selected area (yellow text not found).")
+            return
+
+        # Check if we are likely on a Retina display or high-DPI scaling
+        # If the screenshot img has different dimensions than w, h
+        scale_x = img.shape[1] / w
+        scale_y = img.shape[0] / h
+
+        # Adjust min/max coordinates back to screen coordinates
+        # We found min_x inside img (scaled). We want coordinates relative to x, y (screen).
+
+        # If scale is 2 (Retina), min_x is in 2x coords. We need to divide by 2.
+        # But wait, mss monitor uses physical coords usually? Or logical?
+        # mss.grab(region) expects coordinates in the same system as the desktop geometry.
+
+        # If the initial screenshot_high_res returned an image that is scaled (e.g. 2x),
+        # then we need to scale down our found coordinates to pass them back to mss.grab
+
+        min_x = int(min_x / scale_x)
+        min_y = int(min_y / scale_y)
+        max_x = int(max_x / scale_x)
+        max_y = int(max_y / scale_y)
+
+        # Ensure width and height are positive
+        width = max_x - min_x + 3
+        height = max_y - min_y + 3
+
+        if width <= 0 or height <= 0:
+             messagebox.showerror("Error", "Invalid nametag dimensions.")
+             return
 
         with mss.mss() as sct:
             region = {
                 "top": y + min_y - 1,
                 "left": x + min_x - 1,
-                "width": max_x - min_x + 3,
-                "height": max_y - min_y + 3
+                "width": width,
+                "height": height
             }
-            name_tag = sct.grab(region)
-            name_tag = np.array(name_tag)
-            name_tag = cv2.cvtColor(name_tag, cv2.COLOR_BGRA2BGR)
+            try:
+                name_tag = sct.grab(region)
+                name_tag = np.array(name_tag)
+                name_tag = cv2.cvtColor(name_tag, cv2.COLOR_BGRA2BGR)
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to capture nametag: {e}")
+                return
 
         name = simpledialog.askstring("Save As", "Enter filename:")
         if not name:

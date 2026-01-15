@@ -17,7 +17,7 @@ import time
 import os
 import torch
 from cbt import check_fight, take_action, check_popup, resource_path, CORNER_FIGHT_BTN, SIZE_FIGHT_BTN  ## cbt is the file that takes care of everything combat-related
-
+import json
 
 """ This file contains the main script loop and related functions. This is the bulk of the back end together with cbt.py """
 
@@ -26,9 +26,27 @@ device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 
 SCREENSHOT_SIZE = 350  ## Width of the window used to check wether a resource is available
 
+# Load configuration
+def load_config():
+    try:
+        with open(resource_path("config/config.json"), "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {
+            "map_coordinates": {
+                "x": 3,
+                "y": 104,
+                "width": 124,
+                "height": 22
+            }
+        }
+
+config = load_config()
+map_coords = config.get("map_coordinates", {"x": 3, "y": 104, "width": 124, "height": 22})
+
 # Bounds for the map coordinates screenshot
-TOP_CORNER_MAP = (3, 104)
-SIZE_MAP = (124, 22)
+TOP_CORNER_MAP = (map_coords["x"], map_coords["y"])
+SIZE_MAP = (map_coords["width"], map_coords["height"])
 
 # Paths and images to check wether the inventory is full or almost full 
 path_full = resource_path("templates/inventory/Full.png")

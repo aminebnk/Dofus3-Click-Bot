@@ -5,9 +5,11 @@ import tkinter.font as tkFont
 from pynput import mouse
 from pynput.mouse import Button
 import os
-from bot_script import get_map
+import json
+from bot_script import get_map, resource_path
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RESOURCE_PATH = os.path.join(BASE_DIR, "resources", "resources.db")
+CONFIG_PATH = os.path.join(BASE_DIR, "resources", "config", "config.json")
 
 ## Database to store the resource positions
 def init_db():
@@ -133,6 +135,9 @@ class ResourceMapper(tk.Tk):
         self.save_btn = tk.Button(self.bottom_frame, text="Save Map", command=self.save_map)
         self.save_btn.pack(side="left")
 
+        self.calibrate_btn = tk.Button(self.bottom_frame, text="Calibrate Map", command=self.calibrate_map_zone)
+        self.calibrate_btn.pack(side="left", padx=10)
+
         # Mouse listener. Clicks are handled by the on_click function
         self.listener = mouse.Listener(on_click=self.on_click)
         self.listener.start()
@@ -240,23 +245,28 @@ class ResourceMapper(tk.Tk):
 
 
     def on_click(self, x, y, button, pressed):
-        if pressed and button == Button.left and self.active_resource:
-            win_x = self.winfo_x()
-            win_y = self.winfo_y()
-            win_w = self.winfo_width()
-            win_h = self.winfo_height()
-
-            TITLEBAR_HEIGHT = 25
-            # The clicks inside the window are ignored for the purpose of adding resource positions
-            if win_x <= x <= win_x + win_w + 1 and win_y - TITLEBAR_HEIGHT<= y <= win_y + win_h + TITLEBAR_HEIGHT + 1:
+        if pressed and button == Button.left:
+            if getattr(self, "is_calibrating", False):
+                self.on_calibration_click(x, y)
                 return
-            # The first click outside the window of the resource mapper is ignored (recall that self.window_focused is updated to 1 when the app loses focus)
-            if self.window_focused < 1:
-                self.resources[self.active_resource].append((int(x), int(y))) # We add the position to the list inside the dictionary
-                resource_label = " ".join(f"({rx},{ry})" for rx, ry in self.resources[self.active_resource]) # We update the label next to the resource button
-                self.resource_labels[self.active_resource].config(text=resource_label)
-            else:
-                self.window_focused -= 1
+
+            if self.active_resource:
+                win_x = self.winfo_x()
+                win_y = self.winfo_y()
+                win_w = self.winfo_width()
+                win_h = self.winfo_height()
+
+                TITLEBAR_HEIGHT = 25
+                # The clicks inside the window are ignored for the purpose of adding resource positions
+                if win_x <= x <= win_x + win_w + 1 and win_y - TITLEBAR_HEIGHT<= y <= win_y + win_h + TITLEBAR_HEIGHT + 1:
+                    return
+                # The first click outside the window of the resource mapper is ignored (recall that self.window_focused is updated to 1 when the app loses focus)
+                if self.window_focused < 1:
+                    self.resources[self.active_resource].append((int(x), int(y))) # We add the position to the list inside the dictionary
+                    resource_label = " ".join(f"({rx},{ry})" for rx, ry in self.resources[self.active_resource]) # We update the label next to the resource button
+                    self.resource_labels[self.active_resource].config(text=resource_label)
+                else:
+                    self.window_focused -= 1
 
     def save_map(self):
         """
@@ -272,7 +282,11 @@ class ResourceMapper(tk.Tk):
             map_y = int(self.y_spin.get().strip())
         else:
             try:
-                map_x, map_y = get_map()
+                result = get_map()
+                if result is None:
+                    messagebox.showerror("Error", "Impossible de récupérer la position de la map")
+                    return
+                map_x, map_y = result
                 self.x_spin.delete(0, "end")
                 self.x_spin.insert(0, str(map_x))
                 self.y_spin.delete(0, "end")
@@ -311,6 +325,47 @@ class ResourceMapper(tk.Tk):
         for key in self.resource_labels:
             self.resource_labels[key].config(text="")
     
+    def calibrate_map_zone(self):
+        messagebox.showinfo("Calibration", "Click on the Top-Left corner of the map coordinates, then on the Bottom-Right corner.")
+        self.calibrate_points = []
+        self.is_calibrating = True
+
+    def on_calibration_click(self, x, y):
+        self.calibrate_points.append((x, y))
+        if len(self.calibrate_points) == 2:
+            self.is_calibrating = False
+            p1 = self.calibrate_points[0]
+            p2 = self.calibrate_points[1]
+
+            x_min = min(p1[0], p2[0])
+            y_min = min(p1[1], p2[1])
+            x_max = max(p1[0], p2[0])
+            y_max = max(p1[1], p2[1])
+
+            w = x_max - x_min
+            h = y_max - y_min
+
+            config = {}
+            if os.path.exists(CONFIG_PATH):
+                with open(CONFIG_PATH, "r") as f:
+                    try:
+                        config = json.load(f)
+                    except json.JSONDecodeError:
+                        pass
+
+            config["map_coordinates"] = {
+                "x": x_min,
+                "y": y_min,
+                "width": w,
+                "height": h
+            }
+
+            os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+            with open(CONFIG_PATH, "w") as f:
+                json.dump(config, f, indent=4)
+
+            messagebox.showinfo("Calibration", "Map coordinates updated! Restart the bot for changes to take effect.")
+
 
 def run():
     init_db()
