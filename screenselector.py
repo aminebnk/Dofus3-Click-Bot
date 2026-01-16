@@ -225,26 +225,26 @@ class RegionSelector(tk.Toplevel):
             self.cancel()
             return
 
-        # Close overlay
-        self.destroy()
-        self.master.deiconify()
-        
         # Check for Retina/High DPI scaling by comparing screenshot size to screen size
         # We take a dummy screenshot of the whole screen to check dimensions
         with mss.mss() as sct:
-             # Grab the monitor that corresponds to (0,0) - usually monitor 1
-             # We assume the window is on the primary monitor for simplicity in calibration
-             monitor = sct.monitors[1]
-             # monitor width/height
-             mon_w = monitor["width"]
-             mon_h = monitor["height"]
-             
-             # Screen size reported by tkinter
-             scr_w = self.winfo_screenwidth()
-             scr_h = self.winfo_screenheight()
-             
-             scale_x = mon_w / scr_w
-             scale_y = mon_h / scr_h
+            # Grab the monitor that corresponds to (0,0) - usually monitor 1
+            # We assume the window is on the primary monitor for simplicity in calibration
+            monitor = sct.monitors[1]
+            # monitor width/height
+            mon_w = monitor["width"]
+            mon_h = monitor["height"]
+
+            # Screen size reported by tkinter
+            scr_w = self.winfo_screenwidth()
+            scr_h = self.winfo_screenheight()
+
+            scale_x = mon_w / scr_w
+            scale_y = mon_h / scr_h
+
+        # Close overlay
+        self.destroy()
+        self.master.deiconify()
 
         # Adjust coordinates
         final_x = int(x1 * scale_x)
