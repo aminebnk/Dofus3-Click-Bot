@@ -134,7 +134,7 @@ class ResourceMapper(tk.Tk):
         self.zone_entry.pack(side="left")
         self.save_btn = tk.Button(self.bottom_frame, text="Save Map", command=self.save_map)
         self.save_btn.pack(side="left")
-
+        
         self.calibrate_btn = tk.Button(self.bottom_frame, text="Calibrate Map", command=self.calibrate_map_zone)
         self.calibrate_btn.pack(side="left", padx=10)
 
@@ -246,10 +246,6 @@ class ResourceMapper(tk.Tk):
 
     def on_click(self, x, y, button, pressed):
         if pressed and button == Button.left:
-            if getattr(self, "is_calibrating", False):
-                self.on_calibration_click(x, y)
-                return
-
             if self.active_resource:
                 win_x = self.winfo_x()
                 win_y = self.winfo_y()
@@ -326,45 +322,31 @@ class ResourceMapper(tk.Tk):
             self.resource_labels[key].config(text="")
     
     def calibrate_map_zone(self):
-        messagebox.showinfo("Calibration", "Click on the Top-Left corner of the map coordinates, then on the Bottom-Right corner.")
-        self.calibrate_points = []
-        self.is_calibrating = True
+        messagebox.showinfo("Calibration", "Select the area containing the MAP COORDINATES.")
+        from screenselector import select_region
+        select_region(self, self.on_map_selected)
 
-    def on_calibration_click(self, x, y):
-        self.calibrate_points.append((x, y))
-        if len(self.calibrate_points) == 2:
-            self.is_calibrating = False
-            p1 = self.calibrate_points[0]
-            p2 = self.calibrate_points[1]
-
-            x_min = min(p1[0], p2[0])
-            y_min = min(p1[1], p2[1])
-            x_max = max(p1[0], p2[0])
-            y_max = max(p1[1], p2[1])
-
-            w = x_max - x_min
-            h = y_max - y_min
-
-            config = {}
-            if os.path.exists(CONFIG_PATH):
-                with open(CONFIG_PATH, "r") as f:
-                    try:
-                        config = json.load(f)
-                    except json.JSONDecodeError:
-                        pass
-
-            config["map_coordinates"] = {
-                "x": x_min,
-                "y": y_min,
-                "width": w,
-                "height": h
-            }
-
-            os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
-            with open(CONFIG_PATH, "w") as f:
-                json.dump(config, f, indent=4)
-
-            messagebox.showinfo("Calibration", "Map coordinates updated! Restart the bot for changes to take effect.")
+    def on_map_selected(self, x, y, w, h):
+        config = {}
+        if os.path.exists(CONFIG_PATH):
+            with open(CONFIG_PATH, "r") as f:
+                try:
+                    config = json.load(f)
+                except json.JSONDecodeError:
+                    pass
+        
+        config["map_coordinates"] = {
+            "x": x,
+            "y": y,
+            "width": w,
+            "height": h
+        }
+        
+        os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+        with open(CONFIG_PATH, "w") as f:
+            json.dump(config, f, indent=4)
+            
+        messagebox.showinfo("Calibration", "Map coordinates updated! Restart the bot for changes to take effect.")
 
 
 def run():

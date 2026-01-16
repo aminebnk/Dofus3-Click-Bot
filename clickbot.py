@@ -1,10 +1,12 @@
 import tkinter as tk
+from tkinter import messagebox
 import routemaker
 import bot_script as bot_script
 from cbt import resource_path
 import os
 import multiprocessing as mp
 import screenselector
+import json
 
 """ This file is the main app layout. """
 
@@ -35,6 +37,9 @@ class ClickBot:
         self.selected_name = tk.StringVar(root)
 
         tk.Label(selects, text="Sélectionner les paramètres du script:").pack(side="top")
+        
+        self.calibrate_btn = tk.Button(selects, text="CALIBRER LES ZONES", bg="yellow", command=self.calibrate_interface)
+        self.calibrate_btn.pack(side="top", pady=5)
         
         # Drop-dowm menu to select the text-file containing the walls for the zone
         zones = [f for f in os.listdir(resource_path("walls")) if f.endswith(".txt")]
@@ -94,6 +99,53 @@ class ClickBot:
         self.launch_text = tk.Label(launch_frame, text="")
         self.launch_text.pack(side="bottom", padx=10)
 
+    def calibrate_interface(self):
+        messagebox.showinfo("Calibration", "Please select the area containing the MAP COORDINATES (e.g. '12, -5').")
+        screenselector.select_region(self.root, self.calib_map_coords)
+
+    def calib_map_coords(self, x, y, w, h):
+        self.new_config = {}
+        self.new_config["map_coordinates"] = {"x": x, "y": y, "width": w, "height": h}
+        
+        messagebox.showinfo("Calibration", "Please select the FIGHT 'READY' / 'END TURN' BUTTON.")
+        screenselector.select_region(self.root, self.calib_fight_btn)
+
+    def calib_fight_btn(self, x, y, w, h):
+        if "fight_coordinates" not in self.new_config:
+            self.new_config["fight_coordinates"] = {}
+        self.new_config["fight_coordinates"]["CORNER_FIGHT_BTN"] = [x, y]
+        self.new_config["fight_coordinates"]["SIZE_FIGHT_BTN"] = [w, h]
+        self.new_config["fight_coordinates"]["END_TURN_POS"] = [x + w//2, y + h//2]
+
+        messagebox.showinfo("Calibration", "Please select the SPELL ICON you want to use.")
+        screenselector.select_region(self.root, self.calib_spell)
+
+    def calib_spell(self, x, y, w, h):
+        self.new_config["fight_coordinates"]["SPELL_POS"] = [x + w//2, y + h//2]
+
+        messagebox.showinfo("Calibration", "Please select the ENTIRE FIGHT SCENE (the area where characters move).")
+        screenselector.select_region(self.root, self.calib_scene)
+
+    def calib_scene(self, x, y, w, h):
+        self.new_config["fight_coordinates"]["FIGHT_SCN_TOP"] = y
+        self.new_config["fight_coordinates"]["FIGHT_SCN_LEFT"] = x
+        self.new_config["fight_coordinates"]["FIGHT_SCN_WIDTH"] = w
+        self.new_config["fight_coordinates"]["FIGHT_SCN_HEIGHT"] = h
+        
+        self.save_config()
+        messagebox.showinfo("Calibration", "Calibration Complete! Configuration saved.")
+
+    def save_config(self):
+        try:
+            with open(resource_path("config/config.json"), "r") as f:
+                old_config = json.load(f)
+        except:
+            old_config = {}
+        
+        old_config.update(self.new_config)
+        
+        with open(resource_path("config/config.json"), "w") as f:
+            json.dump(old_config, f, indent=4)
 
     def start_selection(self):
         screenselector.ScreenSelector(self.root)

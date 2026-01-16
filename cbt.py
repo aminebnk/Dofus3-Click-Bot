@@ -14,12 +14,13 @@ import heapq
 import torch.nn.functional as F
 import re
 import os, sys
+import json
 
 
 """ This file contains all fight-related functionalities of the bot. """
 
 
-device = torch.device("mps" if torch.backends.mps.is_available() else "cpu") # Use the CPU to run the Convolutional Neurol Network
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu") # Use the CPU to run the Convolutional Neurol Network
 
 def resource_path(relative_path):
     """Get absolute path to resource, wether we are running the app as a pythion file or as an app made by PyInstaller"""
@@ -28,7 +29,7 @@ def resource_path(relative_path):
         base_path = sys._MEIPASS
     else:
         # Normal execution
-        base_path = os.path.abspath(".")
+        base_path = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(base_path, "resources", relative_path)
 
 
@@ -44,18 +45,44 @@ FIGHT_POPUP_TEMPLATE = cv2.imread(resource_path("templates/fight/victory_popup.p
 CHALLENGES = "CHOISIR LES\nCHALLENGES" # When a fight is preparing, the fight button says "CHOISIR LES CHALLENGS": chose your challenges
 PRET = "PRET" # Then the button says "PRET": ready
 FIN = "FIN DE TOUR" # When it's your turn to play, it says "FIN DE TOUR": end your turn
-CORNER_FIGHT_BTN = (975, 835)
-SIZE_FIGHT_BTN = (120, 28)
-END_TURN_POS = (1070, 842)
-SPELL_POS = (500, 845)
+
+def load_config():
+    try:
+        with open(resource_path("config/config.json"), "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+
+config = load_config()
+fight_coords = config.get("fight_coordinates", {})
+
+CORNER_FIGHT_BTN = tuple(fight_coords.get("CORNER_FIGHT_BTN", [975, 835]))
+SIZE_FIGHT_BTN = tuple(fight_coords.get("SIZE_FIGHT_BTN", [120, 28]))
+END_TURN_POS = tuple(fight_coords.get("END_TURN_POS", [1070, 842]))
+SPELL_POS = tuple(fight_coords.get("SPELL_POS", [500, 845]))
 SPELL_RANGE = 5
 
 # The fight is confined to a scene in the middle of the screen, so we only make the template matching there to save some computation
 
-FIGHT_SCN_TOP = 175
-FIGHT_SCN_LEFT = 220
-FIGHT_SCN_WIDTH = 980
-FIGHT_SCN_HEIGHT = 555
+FIGHT_SCN_TOP = fight_coords.get("FIGHT_SCN_TOP", 175)
+FIGHT_SCN_LEFT = fight_coords.get("FIGHT_SCN_LEFT", 220)
+FIGHT_SCN_WIDTH = fight_coords.get("FIGHT_SCN_WIDTH", 980)
+FIGHT_SCN_HEIGHT = fight_coords.get("FIGHT_SCN_HEIGHT", 555)
+
+def reload_config():
+    global CORNER_FIGHT_BTN, SIZE_FIGHT_BTN, END_TURN_POS, SPELL_POS, FIGHT_SCN_TOP, FIGHT_SCN_LEFT, FIGHT_SCN_WIDTH, FIGHT_SCN_HEIGHT
+    config = load_config()
+    fight_coords = config.get("fight_coordinates", {})
+
+    CORNER_FIGHT_BTN = tuple(fight_coords.get("CORNER_FIGHT_BTN", [975, 835]))
+    SIZE_FIGHT_BTN = tuple(fight_coords.get("SIZE_FIGHT_BTN", [120, 28]))
+    END_TURN_POS = tuple(fight_coords.get("END_TURN_POS", [1070, 842]))
+    SPELL_POS = tuple(fight_coords.get("SPELL_POS", [500, 845]))
+    
+    FIGHT_SCN_TOP = fight_coords.get("FIGHT_SCN_TOP", 175)
+    FIGHT_SCN_LEFT = fight_coords.get("FIGHT_SCN_LEFT", 220)
+    FIGHT_SCN_WIDTH = fight_coords.get("FIGHT_SCN_WIDTH", 980)
+    FIGHT_SCN_HEIGHT = fight_coords.get("FIGHT_SCN_HEIGHT", 555)
 
 ## Loading CNN classification model
 

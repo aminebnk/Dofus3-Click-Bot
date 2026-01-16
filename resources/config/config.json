@@ -1,9 +1,1 @@
-{
-    "map_coordinates": {
-        "x": 3,
-        "y": 104,
-        "width": 124,
-        "height": 22
-    },
-    "scale_factor": 1.0
-}
+{"map_coordinates": {"x": 999, "y": 104, "width": 124, "height": 22}, "scale_factor": 1.0, "tesseract_cmd": "", "fight_coordinates": {"CORNER_FIGHT_BTN": [975, 835], "SIZE_FIGHT_BTN": [120, 28], "END_TURN_POS": [1070, 842], "SPELL_POS": [500, 845], "FIGHT_SCN_TOP": 175, "FIGHT_SCN_LEFT": 220, "FIGHT_SCN_WIDTH": 980, "FIGHT_SCN_HEIGHT": 555}}

@@ -16,13 +16,14 @@ from scipy.ndimage import maximum_filter
 import time
 import os
 import torch
-from cbt import check_fight, take_action, check_popup, resource_path, CORNER_FIGHT_BTN, SIZE_FIGHT_BTN  ## cbt is the file that takes care of everything combat-related
+import cbt
+from cbt import check_fight, take_action, check_popup, resource_path  ## cbt is the file that takes care of everything combat-related
 import json
 
 """ This file contains the main script loop and related functions. This is the bulk of the back end together with cbt.py """
 
 
-device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 SCREENSHOT_SIZE = 350  ## Width of the window used to check wether a resource is available
 
@@ -44,9 +45,30 @@ def load_config():
 config = load_config()
 map_coords = config.get("map_coordinates", {"x": 3, "y": 104, "width": 124, "height": 22})
 
+tesseract_cmd = config.get("tesseract_cmd", "")
+if tesseract_cmd:
+    pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
+
 # Bounds for the map coordinates screenshot
 TOP_CORNER_MAP = (map_coords["x"], map_coords["y"])
 SIZE_MAP = (map_coords["width"], map_coords["height"])
+
+def reload_config():
+    global config, map_coords, TOP_CORNER_MAP, SIZE_MAP, tesseract_cmd
+    config = load_config()
+    map_coords = config.get("map_coordinates", {"x": 3, "y": 104, "width": 124, "height": 22})
+    
+    tesseract_cmd = config.get("tesseract_cmd", "")
+    if tesseract_cmd:
+        pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
+
+    # Bounds for the map coordinates screenshot
+    TOP_CORNER_MAP = (map_coords["x"], map_coords["y"])
+    SIZE_MAP = (map_coords["width"], map_coords["height"])
+    
+    # Also reload cbt config
+    from cbt import reload_config as reload_cbt_config
+    cbt.reload_config()
 
 # Paths and images to check wether the inventory is full or almost full 
 path_full = resource_path("templates/inventory/Full.png")
@@ -151,11 +173,11 @@ def move(dest, terminate=False):
     This is just a while loop to go from one map to another using the keyboard.
     Sometimes the character is busy or some other thing goes wrong so we need a while loop
     to ensure the move is made. This is only used to move the character from adjacent maps."""
-    fight_status = screenshot_high_res(CORNER_FIGHT_BTN[0], CORNER_FIGHT_BTN[1], SIZE_FIGHT_BTN[0], SIZE_FIGHT_BTN[1])
+    fight_status = screenshot_high_res(cbt.CORNER_FIGHT_BTN[0], cbt.CORNER_FIGHT_BTN[1], cbt.SIZE_FIGHT_BTN[0], cbt.SIZE_FIGHT_BTN[1])
     while check_fight(fight_status):
         take_action(fight_status)
         time.sleep(0.4)
-        fight_status = screenshot_high_res(CORNER_FIGHT_BTN[0], CORNER_FIGHT_BTN[1], SIZE_FIGHT_BTN[0], SIZE_FIGHT_BTN[1])
+        fight_status = screenshot_high_res(cbt.CORNER_FIGHT_BTN[0], cbt.CORNER_FIGHT_BTN[1], cbt.SIZE_FIGHT_BTN[0], cbt.SIZE_FIGHT_BTN[1])
     check_popup()
     curr_pos = get_map()
     if curr_pos == None:
@@ -445,6 +467,7 @@ def run_script(route_name, resource_names, character_name, zone_name="Amakna.txt
     When a fight is detected, the BOT goes through the fight loop until the fight is over. More info in the 'cbt.py' file.
 
     """
+    reload_config()
     run = False
     terminate = False
 
@@ -453,19 +476,13 @@ def run_script(route_name, resource_names, character_name, zone_name="Amakna.txt
     def on_press(key):
         nonlocal run
         nonlocal terminate
-        try:
-            if hasattr(key, 'char') and key.char == 'n':
-                if not run:
-                    print("Bot started")
-                    run = True
-                else:
-                    print("Bot paused")
-                    run = False
-            elif hasattr(key, 'char') and key.char == 'z':
-                print("Bot terminated")
-                terminate = True
-        except Exception as e:
-            print(f"Error handling key press: {e}")
+        if key == keyboard.KeyCode.from_char('n'):
+            if not run:
+                run = True
+            else:
+                run = False
+        elif key == keyboard.KeyCode.from_char('z'):
+            terminate = True
 
     listener = keyboard.Listener(on_press = on_press)
     listener.start()
@@ -473,11 +490,9 @@ def run_script(route_name, resource_names, character_name, zone_name="Amakna.txt
 
     walls = get_walls(zone_name)
     path = get_route(route_name)
-    print("Script ready. Press 'n' to start/pause, 'z' to stop.")
     while not terminate:
         time.sleep(0.1)
         if run:
-            print("Running...")
             for destination in path: # Goes along the path one map after the other
                 bank_count += 1
                 if bank_count == 5:
@@ -506,16 +521,16 @@ def run_script(route_name, resource_names, character_name, zone_name="Amakna.txt
                                 else: 
                                     name_pos = new_name_pos
                                     time.sleep(0.5)
-                            fight_status = screenshot_high_res(CORNER_FIGHT_BTN[0], CORNER_FIGHT_BTN[1], SIZE_FIGHT_BTN[0], SIZE_FIGHT_BTN[1])
+                            fight_status = screenshot_high_res(cbt.CORNER_FIGHT_BTN[0], cbt.CORNER_FIGHT_BTN[1], cbt.SIZE_FIGHT_BTN[0], cbt.SIZE_FIGHT_BTN[1])
                             while check_fight(fight_status):
                                 take_action(fight_status)
                                 time.sleep(0.4)
-                                fight_status = screenshot_high_res(CORNER_FIGHT_BTN[0], CORNER_FIGHT_BTN[1], SIZE_FIGHT_BTN[0], SIZE_FIGHT_BTN[1])
+                                fight_status = screenshot_high_res(cbt.CORNER_FIGHT_BTN[0], cbt.CORNER_FIGHT_BTN[1], cbt.SIZE_FIGHT_BTN[0], cbt.SIZE_FIGHT_BTN[1])
                             check_popup()
         
         
 if __name__=="__main__":
-    run_script("Forêt d'Astrub 2.txt", ["Frêne", "Châtaigner"], "Brigitte-Fardeau.png", "Amakna.txt")
+    run_script("Forêt d'Astrub.txt", ["Frêne", "Châtaigner"], "Brigitte-Fardeau.png", "Amakna.txt")
 
     # # # # # # # # # # # # # # # # # # # # # # # 
     # Just some code to test specific functions #

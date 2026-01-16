@@ -132,7 +132,18 @@ The bot then goes through the path in a loop, collecting resources, handling fig
 
 BEWARE: The bot relies on UI elements that are movable. Those elemets (inventory, spell bar with a single line of spells, fight button) all need to be in their default position for the bot to function properly. 
 
+## Configuration
 
+The `resources/config/config.json` file allows you to customize the bot's behavior and screen coordinates.
 
-
-
+*   **`map_coordinates`**:
+    *   `x`, `y`: Top-left coordinates of the map position text.
+    *   `width`, `height`: Size of the area to capture.
+*   **`scale_factor`**: Screen scaling factor (usually 1.0).
+*   **`tesseract_cmd`**: Path to `tesseract.exe` (required on Windows).
+*   **`fight_coordinates`**:
+    *   `CORNER_FIGHT_BTN`: Coordinates `[x, y]` of the Ready/End Turn button.
+    *   `SIZE_FIGHT_BTN`: Size `[width, height]` of the button.
+    *   `END_TURN_POS`: Coordinates `[x, y]` to click for ending the turn.
+    *   `SPELL_POS`: Coordinates `[x, y]` of the spell to use.
+    *   `FIGHT_SCN_TOP`, `_LEFT`, `_WIDTH`, `_HEIGHT`: Bounding box for the combat area.
